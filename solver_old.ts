@@ -2,6 +2,10 @@ const start: number = performance.now();
 
 type Coord = [number, number];
 
+type PieceSet = {
+    [name: string]: Coord[];
+};
+
 type Solution = number[][];
 
 type Board = (string | null)[][];
@@ -20,7 +24,7 @@ const BOARD: Board = [
     [ null,  null,  null,  null,  null,   "8",    "",  "25"],
 ];
 
-const PIECES: Record<string, Coord[]> = {
+const PIECES: PieceSet = {
     "Elbow": [[0,0], [1,0], [1,1]],
     "3-Line": [[0,0], [1,0], [2,0]],
     "Triangle": [[0,0], [1,0], [2,1]],
@@ -78,14 +82,17 @@ function generateUniqueRotations(basePiece: Coord[]): Coord[][] {
     return rotations;
 }
 
-const PIECE_ROTATIONS: Record<string, Coord[][]> = Object.fromEntries(
-    Object.entries(PIECES).map(([name, coords]) => [
-        name,
-        generateUniqueRotations(coords)
-    ])
-);
+const PIECE_ROTATIONS: Record<string, Coord[][]> = {};
 
+for (const [name, coords] of Object.entries(PIECES)) {
+    PIECE_ROTATIONS[name] = generateUniqueRotations(coords);
+}
 
+for (const [idx,name] of Object.keys(PIECES).entries()) {
+    for (const orientation of PIECE_ROTATIONS[name]) {
+        console.log(orientation)
+    }
+}
 
 class PuzzleSolver {
 
@@ -138,11 +145,8 @@ class PuzzleSolver {
             }
         }
 
-        this.usedPieces = {};
-
-        for (const name of Object.keys(PIECES)) {
-            this.usedPieces[name] = false;
-        }
+        this.usedPieces = Object.fromEntries(Object.entries(PIECES).map(([name, _]) => [name, false]));
+        console.log(Object.keys(this.usedPieces));
     }
 
     hasUnfillableHoles(): boolean {
@@ -242,7 +246,8 @@ class PuzzleSolver {
 
         if (this.usedPieces[name])
             continue;
-
+        console.log(name)
+        console.log(PIECE_ROTATIONS[name])
         for (const orientation of
             PIECE_ROTATIONS[name]) {
 
@@ -344,42 +349,20 @@ function are2DArraysEqual<T>(arr1: T[][], arr2: T[][]): boolean {
     });
 }
 
-function solveCalendar(
-    month: string,
-    day: string,
-    weekday: string
-) {
-    const solver =
-        new PuzzleSolver(
-            BOARD,
-            month,
-            day,
-            weekday
-        );
-
-    const solved = solver.solve();
-
-    return {
-        solved,
-        solution: solver.solution
-    };
-}
-
-(window as any).solveCalendar =
-    solveCalendar;
-
-// console.table(solver.solution);
-// console.table(BOARD);
-
-// solver.solve();
-// console.table(solver.solution);
-
-// console.log(are2DArraysEqual(solver.solution, SOLUTION))
 
 
-// const end: number = performance.now();
-// const duration: number = end - start;
+console.table(solver.solution);
+console.table(BOARD);
 
-// console.log(`Execution time: ${duration.toFixed(4)} ms`);
+solver.solve();
+console.table(solver.solution);
+
+console.log(are2DArraysEqual(solver.solution, SOLUTION))
+
+
+const end: number = performance.now();
+const duration: number = end - start;
+
+console.log(`Execution time: ${duration.toFixed(4)} ms`);
 
 

@@ -18,7 +18,9 @@ document
         }
 
         output.textContent =
-            result.solution
-                .map(row => row.join(" "))
-                .join("\n");
+            JSON.stringify(
+                result.solution,
+                null,
+                2
+            );
     });
