@@ -9,12 +9,16 @@ document
                 "Thu"
             );
 
-        document
-            .getElementById("output")
-            .textContent =
-            JSON.stringify(
-                result.solution,
-                null,
-                2
-            );
+        const output =
+            document.getElementById("output");
+
+        if (!result.solved) {
+            output.textContent = "No solution found";
+            return;
+        }
+
+        output.textContent =
+            result.solution
+                .map(row => row.join(" "))
+                .join("\n");
     });

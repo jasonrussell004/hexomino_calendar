@@ -344,16 +344,42 @@ function are2DArraysEqual<T>(arr1: T[][], arr2: T[][]): boolean {
     });
 }
 
+function solveCalendar(
+    month: string,
+    day: string,
+    weekday: string
+) {
+    const solver =
+        new PuzzleSolver(
+            BOARD,
+            month,
+            day,
+            weekday
+        );
+
+    const solved = solver.solve();
+
+    return {
+        solved,
+        solution: solver.solution
+    };
+}
+
+(window as any).solveCalendar =
+    solveCalendar;
+
 // console.table(solver.solution);
 // console.table(BOARD);
 
-solver.solve();
-console.table(solver.solution);
+// solver.solve();
+// console.table(solver.solution);
 
-console.log(are2DArraysEqual(solver.solution, SOLUTION))
+// console.log(are2DArraysEqual(solver.solution, SOLUTION))
 
 
-const end: number = performance.now();
-const duration: number = end - start;
+// const end: number = performance.now();
+// const duration: number = end - start;
 
-console.log(`Execution time: ${duration.toFixed(4)} ms`);
+// console.log(`Execution time: ${duration.toFixed(4)} ms`);
+
+
