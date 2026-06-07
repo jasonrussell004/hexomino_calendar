@@ -14,6 +14,33 @@ const BOARD = [
     [ null,  null,  null,  null,  null,   "8",    "",  "25"],
 ];
 
+function boardToSolution(board, targetMonth, targetDay, targetWeekday) {
+    const rows = board.length;
+    const cols = board[0].length;
+
+    let solution =
+        Array.from(
+            {length: rows},
+            () => Array(cols).fill(0)
+        );
+    
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const val = board[r][c];
+
+            if (val === null) {
+                solution[r][c] = -1;
+            } else if (val === targetMonth ||
+                        val === targetDay ||
+                        val === targetWeekday) {
+                solution[r][c] = -2;
+            }
+        }
+    }
+
+    return solution;
+}
+
 const PIECES = {
              "Elbow": [[0, 0], [1, 0], [1, 1]],
             "3-Line": [[0, 0], [1, 0], [2, 0]],
@@ -111,25 +138,7 @@ class PuzzleSolver {
     }
 
     solverSetup() {
-        this.solution =
-            Array.from(
-                {length: this.rows},
-                () => Array(this.cols).fill(0)
-            );
-        
-        for (let r = 0; r < this.rows; r++) {
-            for (let c = 0; c < this.cols; c++) {
-                const val = this.board[r][c];
-
-                if (val === null) {
-                    this.solution[r][c] = -1;
-                } else if (val === this.targetMonth ||
-                           val === this.targetDay ||
-                           val === this.targetWeekday) {
-                    this.solution[r][c] = -2;
-                }
-            }
-        }
+        this.solution = boardToSolution(BOARD, this.targetMonth, this.targetDay, this.targetWeekday)
 
         this.usedPieces = Object.fromEntries(Object.entries(PIECES).map(([name, coords]) => [name, false]));
     }
