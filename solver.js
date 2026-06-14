@@ -18,12 +18,8 @@ function boardToSolution(board, targetMonth, targetDay, targetWeekday) {
     const rows = board.length;
     const cols = board[0].length;
 
-    let solution =
-        Array.from(
-            {length: rows},
-            () => Array(cols).fill(0)
-        );
-    
+    const solution = Array.from({length: rows}, () => Array(cols).fill(0));
+
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
             const val = board[r][c];
@@ -31,96 +27,71 @@ function boardToSolution(board, targetMonth, targetDay, targetWeekday) {
             if (val === null) {
                 solution[r][c] = -1;
             } else if (val === targetMonth ||
-                        val === targetDay ||
-                        val === targetWeekday) {
+                       val === targetDay ||
+                       val === targetWeekday) {
                 solution[r][c] = -2;
             }
         }
     }
-
+    
     return solution;
 }
 
 const PIECES = {
-             "Elbow": [[0, 0], [1, 0], [1, 1]],
-            "3-Line": [[0, 0], [1, 0], [2, 0]],
-          "Triangle": [[0, 0], [1, 0], [2, 1]],
-           "Rhombus": [[0, 0], [1, 0], [1, 1], [0, 1]],
-            "4-Line": [[0, 0], [1, 0], [2, 0], [3, 0]],
-                 "C": [[0, 0], [1, 0], [2, 1], [2, 2]],
-                 "P": [[0, 0], [1, 0], [2, 0], [2, 1]],
-          "Mirror P": [[0, 0], [0, 1], [0, 2], [1, 2]],
-                 "L": [[0, 0], [0, 1], [0, 2], [1, 3]],
-          "Mirror L": [[0, 0], [0, 1], [0, 2], [1, 0]],
-           "Zig-Zag": [[0, 0], [1, 0], [2, 1], [3, 1]],
-    "Mirror Zig-Zag": [[0, 0], [1, 1], [2, 1], [3, 2]],
-          "Triforce": [[0, 0], [1, 1], [2, 1], [1, 2]]
+             "Elbow": [[0,0], [1,0], [2,1]],
+            "3-Line": [[0,0], [1,0], [2,0]],
+          "Triangle": [[0,0], [1,0], [1,1]],
+           "Rhombus": [[0,0], [1,0], [1,1], [0,1]],
+            "4-Line": [[0,0], [1,0], [2,0], [3,0]],
+                 "C": [[0,0], [1,0], [2,1], [2,2]],
+                 "P": [[0,0], [1,0], [2,0], [2,1]],
+          "Mirror P": [[0,0], [0,1], [0,2], [1,2]],
+                 "L": [[0,0], [0,1], [0,2], [1,3]],
+          "Mirror L": [[0,0], [0,1], [0,2], [1,0]],
+           "Zig-Zag": [[0,0], [1,0], [2,1], [3,1]],
+    "Mirror Zig-Zag": [[0,0], [1,1], [2,1], [3,2]],
+          "Triforce": [[0,0], [1,1], [2,1], [1,2]]
 };
 
 function generateUniqueRotations(basePiece) {
     const rotations = [];
     const seen = new Set();
-    
+
     let currentPiece = basePiece.map(c => [...c]);
-    
+
     for (let i = 0; i < 6; i++) {
         const rotated = currentPiece.map(([x, y]) => [x - y, x]);
 
-        const [firstX, firstY] = rotated[0];
+        const [x0, y0] = rotated[0];
 
-        const anchored = rotated.map(([x, y]) => [x - firstX, y - firstY]);
-
+        const anchored = rotated.map(([x, y]) => [x - x0, y - y0]);
+        
         const minX = Math.min(...anchored.map(([x]) => x));
-        
-        const minY = Math.min(...anchored.map(([, y]) => y));
-        
-        const normalized =
-            anchored
-            .map(([x, y]) => [x - minX, y - minY])
-            .sort();
-        
+
+        const minY = Math.min(...anchored.map(([,y]) => y));
+
+        const normalized = anchored.map(([x, y]) => [x - minX, y - minY]).sort();
+
         const key = JSON.stringify(normalized);
-        
+
         if (!seen.has(key)) {
             seen.add(key);
             rotations.push(anchored);
         }
-        
+
         currentPiece = rotated;
     }
-    
+
     return rotations;
 }
 
 const PIECE_ROTATIONS = Object.fromEntries(
-    Object.entries(PIECES)
-        .map(([name, coords]) =>
-            [name, generateUniqueRotations(coords)]
-        )
+    Object.entries(PIECES).map(([name, coords]) => [name, generateUniqueRotations(coords)])
 );
 
-const NEIGHBOR_COORDS = [
-    [-1, 0],
-    [1, 0],
-    [0, -1],
-    [0, 1],
-    [1, 1],
-    [-1, -1]
-];
+const NEIGHBOR_COORDS = [[-1,0], [1,0], [0,-1], [0,1], [1,1], [-1,-1]];
 
 class PuzzleSolver {
-    board;
-    
-    targetMonth;
-    targetDay;
-    targetWeekday;
-
-    rows;
-    cols;
-
-    solution;
-    usedPieces;
-
     constructor(board, targetMonth, targetDay, targetWeekday) {
         this.board = board;
 
@@ -138,18 +109,13 @@ class PuzzleSolver {
     }
 
     solverSetup() {
-        this.solution = boardToSolution(BOARD, this.targetMonth, this.targetDay, this.targetWeekday)
-
-        this.usedPieces = Object.fromEntries(Object.entries(PIECES).map(([name, coords]) => [name, false]));
+        this.solution = boardToSolution(BOARD, this.targetMonth, this.targetDay, this.targetWeekday);
+        this.usedPieces = Object.fromEntries(Object.entries(PIECES).map(([name]) => [name, false]));
     }
 
     hasUnfillableHoles() {
-        const visited = 
-            Array.from(
-                {length: this.rows},
-                () => Array(this.cols).fill(false)
-            );
-        
+        const visited = Array.from({length: this.rows}, () => Array(this.cols).fill(false));
+
         for (let r = 0; r < this.rows; r++) {
             for (let c = 0; c < this.cols; c++) {
                 if (this.solution[r][c] !== 0 || visited[r][c]) {
@@ -163,7 +129,7 @@ class PuzzleSolver {
                 while (queue.length) {
                     const [cr, cc] = queue.shift();
                     size++;
-
+                    
                     for (const [dr, dc] of NEIGHBOR_COORDS) {
                         const nr = cr + dr;
                         const nc = cc + dc;
@@ -172,7 +138,7 @@ class PuzzleSolver {
                             nc >= 0 && nc < this.cols &&
                             this.solution[nr][nc] === 0 &&
                             !visited[nr][nc]) {
-                            
+                                
                             visited[nr][nc] = true;
                             queue.push([nr, nc]);
                         
@@ -188,24 +154,18 @@ class PuzzleSolver {
 
         return false;
     }
-    
+
     solve() {
         if (this.hasUnfillableHoles()) {
             return false;
         }
 
         let target = null;
-        
-        for (let r = 0; r < this.rows; r++) {
-            for (let c = 0; c < this.cols; c++) {
+        for (let r = 0; r < this.rows && !target; r++) {
+            for (let c = 0; c < this.cols && !target; c++) {
                 if (this.solution[r][c] === 0) {
                     target = [r, c];
-                    break;
                 }
-            }
-
-            if (target) {
-                break;
             }
         }
 
@@ -232,9 +192,9 @@ class PuzzleSolver {
                         if (nr >= 0 && nr < this.rows &&
                             nc >= 0 && nc < this.cols &&
                             this.solution[nr][nc] === 0) {
-
+                            
                             placed.push([nr, nc]);
-                        
+
                         } else {
                             canPlace = false;
                             break;
@@ -250,13 +210,13 @@ class PuzzleSolver {
                     }
 
                     this.usedPieces[name] = true;
-                    
+
                     if (this.solve()) {
                         return true;
                     }
 
                     this.usedPieces[name] = false;
-                    
+
                     for (const [pr, pc] of placed) {
                         this.solution[pr][pc] = 0;
                     }
@@ -268,52 +228,11 @@ class PuzzleSolver {
     }
 }
 
-const SOLUTION = [
-    [1, 1, 2, -1, -1, -1, -1, -1],
-    [3, 1, 5, 2, -1, -1, -1, -1],
-    [9, 3, 5, -2, 2, -1, -1, -1],
-    [9, 3, 5, 4, 8, 8, -1, -1],
-    [-1, 9, 5, 4, 4, 8, -1, -1],
-    [-1, 11, 9, -2, 4, 13, 8, -1],
-    [-1, -1, 11, 11, 13, 13, 10, -1],
-    [-1, -1, 6, 6, 11, 12, 13, 10],
-    [-1, -1, -1, -2, 6, 7, 12, 10],
-    [-1, -1, -1, -1, 6, 7, 12, 10],
-    [-1, -1, -1, -1, -1, 7, 7, 12]
-];
-
-function are2DArraysEqual(arr1, arr2) {
-    // Check if they point to the exact same memory reference
-    if (arr1 === arr2)
-        return true;
-    // Check if the outer array lengths match
-    if (arr1.length !== arr2.length)
-        return false;
-    // Compare inner arrays
-    return arr1.every((row, i) => {
-        const targetRow = arr2[i];
-        // Check if inner array lengths match
-        if (row.length !== targetRow.length)
-            return false;
-        // Compare every primitive element in the row
-        return row.every((val, j) => val === targetRow[j]);
-    });
-}
-
 function solveCalendar(month, day, weekday) {
     const solver = new PuzzleSolver(BOARD, month, day, weekday);
     const solved = solver.solve();
     return {
-        solved,
+        solved: solved,
         solution: solver.solution
     };
 }
-
-window.solveCalendar = solveCalendar;
-
-// const solver = new PuzzleSolver(BOARD, "21", "May", "Thu");
-// console.table(solver.solution);
-// console.table(BOARD);
-// solver.solve();
-// console.table(solver.solution);
-// console.log(are2DArraysEqual(solver.solution, SOLUTION))

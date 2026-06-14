@@ -1,22 +1,1036 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Hexomino Calendar Solver</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hex Calendar Puzzle</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0d1117;
+      --surface:    #161b27;
+      --surface2:   #1e253a;
+      --border:     #2e3a52;
+      --border-hi:  #4a5e80;
+      --text:       #c9d6e8;
+      --text-muted: #5a6e8a;
+      --accent:     #c8941a;
+      --accent-hi:  #f0b84a;
+      --danger:     #e05555;
+      --success:    #4caf50;
+      --radius:     8px;
+      --mono:       'Courier New', Courier, monospace;
+      --ui:         -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    body {
+      font-family: var(--ui);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 16px 48px;
+    }
+
+    header { text-align: center; margin-bottom: 22px; }
+
+    h1 {
+      font-family: var(--mono);
+      font-size: clamp(16px, 4vw, 24px);
+      font-weight: 700;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 5px;
+    }
+
+    .tagline {
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .controls {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      align-items: flex-end;
+      justify-content: center;
+      margin-bottom: 16px;
+      width: 100%;
+      max-width: 740px;
+    }
+
+    .cg { display: flex; flex-direction: column; gap: 5px; }
+
+    label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: var(--ui);
+      padding: 8px 14px;
+      cursor: pointer;
+      outline: none;
+      min-width: 82px;
+      transition: border-color 0.15s;
+      appearance: auto;
+    }
+    select:hover, select:focus { border-color: var(--border-hi); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--ui);
+      font-size: 14px;
+      height: 38px;
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+    .btn:hover { background: #252f47; border-color: var(--border-hi); }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn.primary {
+      background: #2a1e00;
+      border-color: var(--accent);
+      color: var(--accent-hi);
+      font-weight: 600;
+    }
+    .btn.primary:hover { background: #3a2800; }
+
+    .btn svg {
+      width: 15px; height: 15px;
+      stroke: currentColor; fill: none;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+      flex-shrink: 0;
+    }
+
+    .btn-symbol { font-size: 20px; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: none;
+      width: 15px; height: 15px;
+      border: 2px solid transparent;
+      border-top-color: var(--accent-hi);
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+    }
+
+    #output {
+      font-size: 13px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      text-align: center;
+      min-height: 20px;
+      margin-bottom: 14px;
+      letter-spacing: 0.4px;
+      transition: color 0.2s;
+    }
+    #output.solved  { color: var(--success); font-weight: 700; }
+    #output.error   { color: var(--danger); }
+    #output.loading { color: var(--accent-hi); }
+
+    .board-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      width: 100%;
+      max-width: 740px;
+      display: flex;
+      justify-content: center;
+      overflow: visible;
+      position: relative;
+    }
+
+    #board {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-width: 660px;
+    }
+
+    .tray-wrap {
+      width: 100%;
+      max-width: 740px;
+      margin-top: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px 18px;
+    }
+
+    .tray-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tray-title {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .tray-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .tray-pieces {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px 18px;
+      align-items: flex-start;
+    }
+
+    .piece-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+      opacity: 1;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+    .piece-card:hover { transform: scale(1.06); }
+    .piece-card:active { cursor: grabbing; }
+    .piece-card.placed { opacity: 0.28; pointer-events: none; }
+
+    .piece-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .piece-rot-btns {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .rot-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 2px 6px;
+      cursor: pointer;
+      line-height: 1.4;
+      transition: background 0.12s, color 0.12s;
+    }
+    .rot-btn:hover { background: #252f47; color: var(--text); }
+
+    #drag-ghost {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.85;
+      display: none;
+    }
+
+    .drop-valid   { filter: drop-shadow(0 0 6px rgba(76,175,80,0.9)); }
+    .drop-invalid { filter: drop-shadow(0 0 6px rgba(224,85,85,0.9)); }
+
+    .legend {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      justify-content: center;
+      max-width: 740px;
+    }
+
+    .li {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .sw {
+      width: 13px; height: 13px;
+      border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.1);
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 480px) {
+      .controls { padding: 10px 12px; gap: 8px 12px; }
+      select { font-size: 13px; padding: 6px 8px; min-width: 72px; }
+      .btn { font-size: 12px; padding: 7px 10px; }
+      .tray-pieces { gap: 10px 12px; }
+    }
+  </style>
 </head>
-<body style="background-color: black; color: white;">
+<body>
 
-<h1>Hexomino Calendar Solver</h1>
+<header>
+  <h1>Calendar Puzzle</h1>
+  <p class="tagline">Cover every hex — leave month, day &amp; weekday exposed</p>
+</header>
 
-<button id="solveButton">Solve</button>
+<div class="controls">
+  <div class="cg">
+    <label for="selMonth">Month</label>
+    <select id="selMonth">
+      <option>Jan</option><option>Feb</option><option>Mar</option>
+      <option>Apr</option><option>May</option><option>Jun</option>
+      <option>Jul</option><option>Aug</option><option>Sep</option>
+      <option>Oct</option><option>Nov</option><option>Dec</option>
+    </select>
+  </div>
+  <div class="cg">
+    <label for="selDay">Day</label>
+    <select id="selDay"></select>
+  </div>
+  <div class="cg">
+    <label for="selWeekday">Weekday</label>
+    <select id="selWeekday">
+      <option>Sun</option><option>Mon</option><option>Tue</option>
+      <option>Wed</option><option>Thu</option><option>Fri</option><option>Sat</option>
+    </select>
+  </div>
+  <div class="cg" style="flex-direction:row;gap:7px;align-items:flex-end;">
+    <button class="btn" id="todayBtn">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+      Today
+    </button>
+    <button class="btn primary" id="solveButton">
+      <span class="spinner" id="spinner"></span>
+      <svg id="solveIcon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Solve
+    </button>
+    <button class="btn" id="resetBtn">
+      <span class="btn-symbol">⟲</span>Reset
+    </button>
+  </div>
+</div>
 
-<svg
-    id="board"
-    width="1200"
-    height="800">
-</svg>
+<div id="output">Choose a date above, then drag pieces or hit Solve</div>
 
-<script src="solver.js"></script>
-<script src="app.js"></script>
+<div class="board-wrap">
+  <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
 
+<div class="tray-wrap" id="trayWrap">
+  <div class="tray-header">
+    <span class="tray-title">Pieces — drag onto the board</span>
+    <span class="tray-hint">Scroll or use ↻ ↺ to rotate · click a placed piece to remove it</span>
+  </div>
+  <div class="tray-pieces" id="trayPieces"></div>
+</div>
+
+<div class="legend" id="legend"></div>
+
+<svg id="drag-ghost" xmlns="http://www.w3.org/2000/svg"></svg>
+
+<script>
+"use strict";
+
+const BOARD = [
+    [  "7",    "",  "20",  null,  null,  null,  null,  null],
+    ["Jan",   "9",  "15", "Jul",  null,  null,  null,  null],
+    ["Feb", "Mon",  "11",  "21", "Aug",  null,  null,  null],
+    ["Mar",   "4", "Tue",  "16",  "26", "Sep",  null,  null],
+    [ null,   "2", "Wed",  "12",  "22",  "29",  null,  null],
+    [ null,   "1",   "5", "Thu",  "17",  "27",  "31",  null],
+    [ null,  null,   "3", "Fri",  "13",  "23",  "30",  null],
+    [ null,  null, "Apr",   "6", "Sat",  "18",  "28", "Oct"],
+    [ null,  null,  null, "May", "Sun",  "14",  "24", "Nov"],
+    [ null,  null,  null,  null, "Jun",  "10",  "19", "Dec"],
+    [ null,  null,  null,  null,  null,   "8",    "",  "25"],
+];
+
+function boardToSolution(board, targetMonth, targetDay, targetWeekday) {
+    const rows = board.length;
+    const cols = board[0].length;
+    const solution = Array.from({length: rows}, () => Array(cols).fill(0));
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const val = board[r][c];
+            if (val === null) {
+                solution[r][c] = -1;
+            } else if (val === targetMonth || val === targetDay || val === targetWeekday) {
+                solution[r][c] = -2;
+            }
+        }
+    }
+    return solution;
+}
+
+const PIECES = {
+             "Elbow": [[0,0], [1,0], [2,1]],
+            "3-Line": [[0,0], [1,0], [2,0]],
+          "Triangle": [[0,0], [1,0], [1,1]],
+           "Rhombus": [[0,0], [1,0], [1,1], [0,1]],
+            "4-Line": [[0,0], [1,0], [2,0], [3,0]],
+                 "C": [[0,0], [1,0], [2,1], [2,2]],
+                 "P": [[0,0], [1,0], [2,0], [2,1]],
+          "Mirror P": [[0,0], [0,1], [0,2], [1,2]],
+                 "L": [[0,0], [0,1], [0,2], [1,3]],
+          "Mirror L": [[0,0], [0,1], [0,2], [1,0]],
+           "Zig-Zag": [[0,0], [1,0], [2,1], [3,1]],
+    "Mirror Zig-Zag": [[0,0], [1,1], [2,1], [3,2]],
+          "Triforce": [[0,0], [1,1], [2,1], [1,2]]
+};
+
+function generateUniqueRotations(basePiece) {
+    const rotations = [];
+    const seen = new Set();
+    let currentPiece = basePiece.map(c => [...c]);
+    for (let i = 0; i < 6; i++) {
+        const rotated = currentPiece.map(([x, y]) => [x - y, x]);
+        const [x0, y0] = rotated[0];
+        const anchored = rotated.map(([x, y]) => [x - x0, y - y0]);
+        const minX = Math.min(...anchored.map(([x]) => x));
+        const minY = Math.min(...anchored.map(([,y]) => y));
+        const normalized = anchored.map(([x, y]) => [x - minX, y - minY]).sort();
+        const key = JSON.stringify(normalized);
+        if (!seen.has(key)) {
+            seen.add(key);
+            rotations.push(anchored);
+        }
+        currentPiece = rotated;
+    }
+    return rotations;
+}
+
+const PIECE_ROTATIONS = Object.fromEntries(
+    Object.entries(PIECES).map(([name, coords]) => [name, generateUniqueRotations(coords)])
+);
+
+const NEIGHBOR_COORDS = [[-1,0], [1,0], [0,-1], [0,1], [1,1], [-1,-1]];
+
+class PuzzleSolver {
+    constructor(board, targetMonth, targetDay, targetWeekday) {
+        this.board = board;
+        this.targetMonth = targetMonth;
+        this.targetDay = targetDay;
+        this.targetWeekday = targetWeekday;
+        this.rows = board.length;
+        this.cols = board[0].length;
+        this.solution = [];
+        this.usedPieces = {};
+        this.solverSetup();
+    }
+
+    solverSetup() {
+        this.solution = boardToSolution(BOARD, this.targetMonth, this.targetDay, this.targetWeekday);
+        this.usedPieces = Object.fromEntries(Object.entries(PIECES).map(([name]) => [name, false]));
+    }
+
+    hasUnfillableHoles() {
+        const visited = Array.from({length: this.rows}, () => Array(this.cols).fill(false));
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+                if (this.solution[r][c] !== 0 || visited[r][c]) continue;
+                let size = 0;
+                const queue = [[r, c]];
+                visited[r][c] = true;
+                while (queue.length) {
+                    const [cr, cc] = queue.shift();
+                    size++;
+                    for (const [dr, dc] of NEIGHBOR_COORDS) {
+                        const nr = cr + dr, nc = cc + dc;
+                        if (nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols &&
+                            this.solution[nr][nc] === 0 && !visited[nr][nc]) {
+                            visited[nr][nc] = true;
+                            queue.push([nr, nc]);
+                        }
+                    }
+                }
+                if ([1, 2, 5, 7].includes(size)) return true;
+            }
+        }
+        return false;
+    }
+
+    solve() {
+        if (this.hasUnfillableHoles()) return false;
+        let target = null;
+        for (let r = 0; r < this.rows && !target; r++)
+            for (let c = 0; c < this.cols && !target; c++)
+                if (this.solution[r][c] === 0) target = [r, c];
+        if (!target) return true;
+        const [rTarget, cTarget] = target;
+        for (const [idx, name] of Object.keys(this.usedPieces).entries()) {
+            if (this.usedPieces[name]) continue;
+            for (const orientation of PIECE_ROTATIONS[name]) {
+                for (const [rPivot, cPivot] of orientation) {
+                    const placed = [];
+                    let canPlace = true;
+                    for (const [dx, dy] of orientation) {
+                        const nr = rTarget + dx - rPivot;
+                        const nc = cTarget + dy - cPivot;
+                        if (nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols &&
+                            this.solution[nr][nc] === 0) {
+                            placed.push([nr, nc]);
+                        } else {
+                            canPlace = false;
+                            break;
+                        }
+                    }
+                    if (!canPlace) continue;
+                    for (const [pr, pc] of placed) this.solution[pr][pc] = idx + 1;
+                    this.usedPieces[name] = true;
+                    if (this.solve()) return true;
+                    this.usedPieces[name] = false;
+                    for (const [pr, pc] of placed) this.solution[pr][pc] = 0;
+                }
+            }
+        }
+        return false;
+    }
+}
+
+function solveCalendar(month, day, weekday) {
+    const solver = new PuzzleSolver(BOARD, month, day, weekday);
+    return { solved: solver.solve(), solution: solver.solution };
+}
+
+const COLORS = {
+    "-2": "#000000", "-1": "none", "0": "#ffffff",
+     "1": "#ff0000",  "2": "#00ff00",  "3": "#78009D",
+     "4": "#ff9b54",  "5": "#00a3c7",  "6": "#ff00f2",
+     "7": "#ffa5c4",  "8": "#126E75",  "9": "#b778ff",
+    "10": "#9A5B12", "11": "#620000", "12": "#FBFF00", "13": "#aaffc3",
+};
+
+const HEX_RADIUS = 30;
+
+function hexPoints(cx, cy) {
+    const points = [];
+    for (let i = 0; i < 6; i++) {
+        const ang = (Math.PI / 180) * (60 * i);
+        points.push(`${cx + HEX_RADIUS * Math.cos(ang)},${cy + HEX_RADIUS * Math.sin(ang)}`);
+    }
+    return points.join(" ");
+}
+
+// boardToPixel(row, col): row drives x-axis, col drives y-axis (with shear)
+// x = 1.5 * R * row
+// y = sqrt(3) * R * (col - row/2)
+function boardToPixel(row, col) {
+    return [
+        1.5 * HEX_RADIUS * row,
+        Math.sqrt(3) * HEX_RADIUS * (col - row / 2)
+    ];
+}
+
+function makeSVG(tag) {
+    return document.createElementNS("http://www.w3.org/2000/svg", tag);
+}
+
+function drawBoard(board) {
+    const svg = document.getElementById("board");
+    svg.innerHTML = "";
+    const centers = [];
+
+    for (let row = 0; row < board.length; row++) {
+        for (let col = 0; col < board[row].length; col++) {
+            const cell = board[row][col];
+            if (cell === -1) continue;
+
+            const [x, y] = boardToPixel(row, col);
+            centers.push([x, y]);
+
+            const poly = makeSVG("polygon");
+            poly.setAttribute("points", hexPoints(x, y));
+            poly.setAttribute("fill", COLORS[cell]);
+            poly.setAttribute("stroke", "black");
+            poly.setAttribute("stroke-width", "2");
+            if (cell > 0) {
+                poly.style.cursor = "pointer";
+                poly.dataset.row = row;
+                poly.dataset.col = col;
+                poly.addEventListener("click", onBoardCellClick);
+            }
+            svg.appendChild(poly);
+
+            const text = makeSVG("text");
+            text.setAttribute("x", x);
+            text.setAttribute("y", y);
+            text.setAttribute("text-anchor", "middle");
+            text.setAttribute("dominant-baseline", "middle");
+            text.setAttribute("dy", "0.05em");
+            text.setAttribute("font-size", String(HEX_RADIUS / 1.75));
+            text.setAttribute("font-family", "Arial");
+            text.setAttribute("fill", cell === -2 ? "white" : "black");
+            text.textContent = BOARD[row][col];
+            if (cell > 0) {
+                text.style.cursor = "pointer";
+                text.dataset.row = row;
+                text.dataset.col = col;
+                text.addEventListener("click", onBoardCellClick);
+            }
+            svg.appendChild(text);
+        }
+    }
+
+    if (!centers.length) return;
+
+    try {
+        const bb = svg.getBBox();
+        if (bb && bb.width > 0) {
+            const p = 10;
+            svg.setAttribute("viewBox", `${bb.x - p} ${bb.y - p} ${bb.width + p * 2} ${bb.height + p * 2}`);
+        }
+    } catch(e) {}
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Manual play state
+═══════════════════════════════════════════════════════════ */
+const PIECE_NAMES = Object.keys(PIECES);
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const WEEKDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+let manualState = [];
+let pieceStates = [];
+let isAutoSolved = false;
+
+function getPieceCells(pieceIdx, rotIdx) {
+    const name = PIECE_NAMES[pieceIdx];
+    const rots = PIECE_ROTATIONS[name];
+    return rots[rotIdx % rots.length];
+}
+
+function initManualState() {
+    const m = selMonth.value, d = selDay.value, w = selWeekday.value;
+    manualState = boardToSolution(BOARD, m, d, w);
+    pieceStates = PIECE_NAMES.map(() => ({rotIdx: 0, placed: false}));
+    isAutoSolved = false;
+}
+
+function redrawBoard() { drawBoard(manualState); }
+
+function onBoardCellClick(e) {
+    const r = parseInt(e.target.dataset.row);
+    const c = parseInt(e.target.dataset.col);
+    if (isNaN(r) || isNaN(c)) return;
+    const colorIdx = manualState[r][c];
+    if (colorIdx <= 0) return;
+    const pieceIdx = colorIdx - 1;
+    for (let rr = 0; rr < manualState.length; rr++)
+        for (let cc = 0; cc < manualState[rr].length; cc++)
+            if (manualState[rr][cc] === colorIdx) manualState[rr][cc] = 0;
+    pieceStates[pieceIdx].placed = false;
+    redrawBoard();
+    renderTray();
+    setStatus(`"${PIECE_NAMES[pieceIdx]}" removed — drag it back onto the board`);
+}
+
+function tryPlacePiece(pieceIdx, cells, anchorRow, anchorCol) {
+    const colorIdx = pieceIdx + 1;
+    const coords = cells.map(([dr, dc]) => [anchorRow + dr, anchorCol + dc]);
+    for (const [r, c] of coords) {
+        if (r < 0 || r >= manualState.length || c < 0 || c >= manualState[0].length) return false;
+        if (manualState[r][c] !== 0) return false;
+    }
+    for (const [r, c] of coords) manualState[r][c] = colorIdx;
+    pieceStates[pieceIdx].placed = true;
+    return true;
+}
+
+function checkWin() {
+    for (let r = 0; r < manualState.length; r++)
+        for (let c = 0; c < manualState[r].length; c++)
+            if (manualState[r][c] === 0) return false;
+    return true;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Tray rendering
+═══════════════════════════════════════════════════════════ */
+function renderPieceSVG(pieceIdx, rotIdx) {
+    const cells = getPieceCells(pieceIdx, rotIdx);
+    const color = COLORS[String(pieceIdx + 1)];
+    const pts = cells.map(([row, col]) => boardToPixel(row, col));
+    const minX = Math.min(...pts.map(([x]) => x));
+    const minY = Math.min(...pts.map(([,y]) => y));
+    const maxX = Math.max(...pts.map(([x]) => x));
+    const maxY = Math.max(...pts.map(([,y]) => y));
+    const pad = HEX_RADIUS + 2;
+    const W = (maxX - minX) + 2 * pad;
+    const H = (maxY - minY) + 2 * pad;
+
+    const svg = makeSVG("svg");
+    svg.setAttribute("width", String(Math.ceil(W)));
+    svg.setAttribute("height", String(Math.ceil(H)));
+    svg.setAttribute("viewBox", `${minX - pad} ${minY - pad} ${W} ${H}`);
+    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    pts.forEach(([x, y]) => {
+        const poly = makeSVG("polygon");
+        poly.setAttribute("points", hexPoints(x, y));
+        poly.setAttribute("fill", color);
+        poly.setAttribute("stroke", "black");
+        poly.setAttribute("stroke-width", "1.5");
+        svg.appendChild(poly);
+    });
+    return svg;
+}
+
+function buildGhostSVG(pieceIdx, rotIdx) {
+    const cells = getPieceCells(pieceIdx, rotIdx);
+    const color = COLORS[String(pieceIdx + 1)];
+    const pts = cells.map(([row, col]) => boardToPixel(row, col));
+    const minX = Math.min(...pts.map(([x]) => x));
+    const minY = Math.min(...pts.map(([,y]) => y));
+    const maxX = Math.max(...pts.map(([x]) => x));
+    const maxY = Math.max(...pts.map(([,y]) => y));
+    const pad = HEX_RADIUS + 2;
+    const W = (maxX - minX) + 2 * pad;
+    const H = (maxY - minY) + 2 * pad;
+
+    const ghost = document.getElementById("drag-ghost");
+    ghost.innerHTML = "";
+    ghost.setAttribute("width",  String(Math.ceil(W)));
+    ghost.setAttribute("height", String(Math.ceil(H)));
+    ghost.setAttribute("viewBox", `${minX - pad} ${minY - pad} ${W} ${H}`);
+
+    // Cursor anchors to the first cell of the piece
+    ghost.offsetX = pts[0][0] - (minX - pad);
+    ghost.offsetY = pts[0][1] - (minY - pad);
+    ghost.cells = cells;
+    ghost.pieceIdx = pieceIdx;
+
+    pts.forEach(([x, y]) => {
+        const poly = makeSVG("polygon");
+        poly.setAttribute("points", hexPoints(x, y));
+        poly.setAttribute("fill", color);
+        poly.setAttribute("stroke", "black");
+        poly.setAttribute("stroke-width", "2");
+        ghost.appendChild(poly);
+    });
+    return ghost;
+}
+
+function renderTray() {
+    const tray = document.getElementById("trayPieces");
+    tray.innerHTML = "";
+    PIECE_NAMES.forEach((name, pieceIdx) => {
+        const ps = pieceStates[pieceIdx];
+        const placed = ps.placed;
+
+        const card = document.createElement("div");
+        card.className = "piece-card" + (placed ? " placed" : "");
+        card.title = placed ? `${name} (placed — click on board to remove)` : `${name} — drag onto board`;
+
+        card.appendChild(renderPieceSVG(pieceIdx, ps.rotIdx));
+
+        const lbl = document.createElement("div");
+        lbl.className = "piece-label";
+        lbl.textContent = name;
+        card.appendChild(lbl);
+
+        const rotRow = document.createElement("div");
+        rotRow.className = "piece-rot-btns";
+
+        const ccw = document.createElement("button");
+        ccw.className = "rot-btn";
+        ccw.textContent = "↺";
+        ccw.title = "Rotate counter-clockwise";
+        ccw.addEventListener("click", e => { e.stopPropagation(); rotatePiece(pieceIdx, -1); });
+
+        const cw = document.createElement("button");
+        cw.className = "rot-btn";
+        cw.textContent = "↻";
+        cw.title = "Rotate clockwise";
+        cw.addEventListener("click", e => { e.stopPropagation(); rotatePiece(pieceIdx, 1); });
+
+        rotRow.appendChild(ccw);
+        rotRow.appendChild(cw);
+        card.appendChild(rotRow);
+
+        if (!placed) {
+            card.addEventListener("mousedown", e => onDragStart(e, pieceIdx));
+            card.addEventListener("touchstart", e => onDragStart(e, pieceIdx), {passive: false});
+            card.addEventListener("wheel", e => {
+                e.preventDefault();
+                rotatePiece(pieceIdx, e.deltaY > 0 ? 1 : -1);
+            }, {passive: false});
+        }
+        tray.appendChild(card);
+    });
+}
+
+function rotatePiece(pieceIdx, dir) {
+    const ps = pieceStates[pieceIdx];
+    const name = PIECE_NAMES[pieceIdx];
+    const nRots = PIECE_ROTATIONS[name].length;
+    ps.rotIdx = ((ps.rotIdx + dir) % nRots + nRots) % nRots;
+    renderTray();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Drag & drop
+═══════════════════════════════════════════════════════════ */
+let dragPieceIdx = -1;
+let ghost = null;
+
+function getClientXY(e) {
+    if (e.touches && e.touches.length) return [e.touches[0].clientX, e.touches[0].clientY];
+    if (e.changedTouches && e.changedTouches.length) return [e.changedTouches[0].clientX, e.changedTouches[0].clientY];
+    return [e.clientX, e.clientY];
+}
+
+function onDragStart(e, pieceIdx) {
+    e.preventDefault();
+    dragPieceIdx = pieceIdx;
+    ghost = buildGhostSVG(pieceIdx, pieceStates[pieceIdx].rotIdx);
+    ghost.style.display = "block";
+    const [cx, cy] = getClientXY(e);
+    positionGhost(cx, cy);
+    document.addEventListener("mousemove", onDragMove);
+    document.addEventListener("touchmove", onDragMove, {passive: false});
+    document.addEventListener("mouseup", onDragEnd);
+    document.addEventListener("touchend", onDragEnd);
+}
+
+function positionGhost(cx, cy) {
+    if (!ghost) return;
+    ghost.style.left = (cx - ghost.offsetX) + "px";
+    ghost.style.top  = (cy - ghost.offsetY) + "px";
+    const hit = getHoveredBoardCell(cx, cy);
+    document.getElementById("board").setAttribute("class", hit ? (hit.valid ? "drop-valid" : "drop-invalid") : "");
+}
+
+function onDragMove(e) {
+    e.preventDefault();
+    const [cx, cy] = getClientXY(e);
+    positionGhost(cx, cy);
+}
+
+function onDragEnd(e) {
+    document.removeEventListener("mousemove", onDragMove);
+    document.removeEventListener("touchmove", onDragMove);
+    document.removeEventListener("mouseup", onDragEnd);
+    document.removeEventListener("touchend", onDragEnd);
+    document.getElementById("board").setAttribute("class", "");
+
+    if (!ghost || dragPieceIdx < 0) { cleanup(); return; }
+
+    const [cx, cy] = getClientXY(e);
+    const hit = getHoveredBoardCell(cx, cy);
+
+    if (hit && hit.valid) {
+        const cells = getPieceCells(dragPieceIdx, pieceStates[dragPieceIdx].rotIdx);
+        if (tryPlacePiece(dragPieceIdx, cells, hit.anchorRow, hit.anchorCol)) {
+            redrawBoard();
+            renderTray();
+            if (checkWin()) {
+                setStatus("🎉 Puzzle solved! Well done!", "solved");
+            } else {
+                const rem = pieceStates.filter(p => !p.placed).length;
+                setStatus(`"${PIECE_NAMES[dragPieceIdx]}" placed · ${rem} piece${rem !== 1 ? "s" : ""} remaining`);
+            }
+        } else {
+            setStatus("Can't place there — try rotating or a different spot", "error");
+        }
+    } else if (hit) {
+        setStatus("Can't place there — cell is occupied or out of bounds");
+    }
+    cleanup();
+}
+
+function cleanup() {
+    if (ghost) { ghost.style.display = "none"; ghost.innerHTML = ""; }
+    dragPieceIdx = -1;
+}
+
+/* ─────────────────────────────────────────────────────────
+   getHoveredBoardCell: convert screen coords → board [row,col]
+   
+   boardToPixel(row, col) gives:
+     x = 1.5 * R * row      →  row = x / (1.5 * R)
+     y = √3 * R * (col - row/2)  →  col = y / (√3 * R) + row/2
+
+   So to invert: compute rowF first from x, then colF from y+rowF.
+───────────────────────────────────────────────────────── */
+function getHoveredBoardCell(cx, cy) {
+    const boardSVG = document.getElementById("board");
+    const ctm = boardSVG.getScreenCTM();
+    if (!ctm) return null;
+
+    // Convert screen pixels → SVG coordinate space
+    const pt = boardSVG.createSVGPoint();
+    pt.x = cx;
+    pt.y = cy;
+    const local = pt.matrixTransform(ctm.inverse());
+
+    // Invert boardToPixel: x=1.5*R*row → row; y=√3*R*(col-row/2) → col
+    const rowF = local.x / (1.5 * HEX_RADIUS);
+    const colF = local.y / (Math.sqrt(3) * HEX_RADIUS) + rowF / 2;
+
+    // Search a neighbourhood of candidate cells (axial rounding can be ambiguous at corners)
+    const candidates = [];
+    for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++)
+            candidates.push([Math.round(rowF) + dr, Math.round(colF) + dc]);
+
+    const cells = ghost ? ghost.cells : [];
+
+    // Pick the candidate whose centre is closest to the cursor
+    let best = null, bestDist = Infinity;
+    for (const [row, col] of candidates) {
+        const [cx2, cy2] = boardToPixel(row, col);          // ← row first, col second
+        const dist = Math.hypot(local.x - cx2, local.y - cy2);
+        if (dist < bestDist) { bestDist = dist; best = [row, col]; }
+    }
+
+    // Reject if cursor is clearly between cells (more than one hex-radius away)
+    if (!best || bestDist > HEX_RADIUS * 1.5) return null;
+
+    const [row, col] = best;
+
+    // Anchor the piece so its first cell lands on [row, col]
+    const [dr0, dc0] = cells[0];
+    const anchorRow = row - dr0;
+    const anchorCol = col - dc0;
+
+    // Validate all piece cells
+    const toBoardCoords = cells.map(([dr, dc]) => [anchorRow + dr, anchorCol + dc]);
+    let valid = true;
+    for (const [r, c] of toBoardCoords) {
+        if (r < 0 || r >= manualState.length ||
+            c < 0 || c >= manualState[0].length ||
+            manualState[r][c] !== 0) {
+            valid = false;
+            break;
+        }
+    }
+
+    return { row, col, anchorRow, anchorCol, valid };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   UI wiring
+═══════════════════════════════════════════════════════════ */
+const selMonth   = document.getElementById("selMonth");
+const selDay     = document.getElementById("selDay");
+const selWeekday = document.getElementById("selWeekday");
+const outputEl   = document.getElementById("output");
+const solveBtn   = document.getElementById("solveButton");
+const spinner2   = document.getElementById("spinner");
+const solveIcon  = document.getElementById("solveIcon");
+const legendEl   = document.getElementById("legend");
+
+(function buildDays() {
+    for (let d = 1; d <= 31; d++) {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = String(d);
+        selDay.appendChild(opt);
+    }
+})();
+
+function applyToday() {
+    const n = new Date();
+    selMonth.value   = MONTHS[n.getMonth()];
+    selDay.value     = String(n.getDate());
+    selWeekday.value = WEEKDAYS[n.getDay()];
+}
+applyToday();
+
+function setStatus(msg, cls = "") { outputEl.textContent = msg; outputEl.className = cls; }
+
+function drawInitial() {
+    legendEl.innerHTML = "";
+    document.getElementById("trayWrap").style.opacity = "1";
+    initManualState();
+    redrawBoard();
+    renderTray();
+    setStatus(`${selWeekday.value} · ${selMonth.value} ${selDay.value} — drag pieces onto the board`);
+}
+
+drawInitial();
+
+selMonth.addEventListener("change",   drawInitial);
+selDay.addEventListener("change",     drawInitial);
+selWeekday.addEventListener("change", drawInitial);
+document.getElementById("todayBtn").addEventListener("click", () => { applyToday(); drawInitial(); });
+document.getElementById("resetBtn").addEventListener("click", () => { legendEl.innerHTML = ""; drawInitial(); });
+
+solveBtn.addEventListener("click", () => {
+    const m = selMonth.value, d = selDay.value, w = selWeekday.value;
+    solveBtn.disabled = true;
+    spinner2.style.display = "block";
+    solveIcon.style.display = "none";
+    setStatus(`Solving for ${w} · ${m} ${d}...`, "loading");
+    legendEl.innerHTML = "";
+
+    requestAnimationFrame(() => setTimeout(() => {
+        const result = solveCalendar(m, d, w);
+        solveBtn.disabled = false;
+        spinner2.style.display = "none";
+        solveIcon.style.display = "block";
+
+        if (!result.solved) { setStatus(`No solution found for ${w} · ${m} ${d}`, "error"); return; }
+
+        document.getElementById("trayWrap").style.opacity = "0.4";
+        drawBoard(result.solution);
+        setStatus(`✓ Solved! — ${w} · ${m} ${d}`, "solved");
+        buildLegend();
+    }, 30));
+});
+
+function buildLegend() {
+    legendEl.innerHTML = "";
+    PIECE_NAMES.forEach((name, i) => {
+        const color = COLORS[String(i + 1)];
+        if (!color) return;
+        const item = document.createElement("div"); item.className = "li";
+        const sw = document.createElement("div"); sw.className = "sw"; sw.style.background = color;
+        item.appendChild(sw);
+        item.appendChild(document.createTextNode(name));
+        legendEl.appendChild(item);
+    });
+    const exp = document.createElement("div"); exp.className = "li";
+    const sw2 = document.createElement("div"); sw2.className = "sw";
+    sw2.style.background = "black"; sw2.style.border = "1px solid #666";
+    exp.appendChild(sw2);
+    exp.appendChild(document.createTextNode("Exposed (month / day / weekday)"));
+    legendEl.appendChild(exp);
+}
+</script>
 </body>
 </html>

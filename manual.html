@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hex Calendar Puzzle</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0d1117;
+      --surface:    #161b27;
+      --surface2:   #1e253a;
+      --border:     #2e3a52;
+      --border-hi:  #4a5e80;
+      --text:       #c9d6e8;
+      --text-muted: #5a6e8a;
+      --accent:     #c8941a;
+      --accent-hi:  #f0b84a;
+      --danger:     #e05555;
+      --success:    #4caf50;
+      --radius:     8px;
+      --mono:       'Courier New', Courier, monospace;
+      --ui:         -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    body {
+      font-family: var(--ui);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 16px 48px;
+    }
+
+    header { text-align: center; margin-bottom: 22px; }
+
+    h1 {
+      font-family: var(--mono);
+      font-size: clamp(16px, 4vw, 24px);
+      font-weight: 700;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 5px;
+    }
+
+    .tagline {
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .controls {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      align-items: flex-end;
+      justify-content: center;
+      margin-bottom: 16px;
+      width: 100%;
+      max-width: 740px;
+    }
+
+    .cg { display: flex; flex-direction: column; gap: 5px; }
+
+    label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: var(--ui);
+      padding: 8px 14px;
+      cursor: pointer;
+      outline: none;
+      min-width: 82px;
+      transition: border-color 0.15s;
+      appearance: auto;
+    }
+    select:hover, select:focus { border-color: var(--border-hi); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--ui);
+      font-size: 14px;
+      height: 38px;
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+    .btn:hover { background: #252f47; border-color: var(--border-hi); }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn.primary {
+      background: #2a1e00;
+      border-color: var(--accent);
+      color: var(--accent-hi);
+      font-weight: 600;
+    }
+    .btn.primary:hover { background: #3a2800; }
+
+    .btn svg {
+      width: 15px; height: 15px;
+      stroke: currentColor; fill: none;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+      flex-shrink: 0;
+    }
+
+    .btn-symbol {
+        font-size: 20px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: none;
+      width: 15px; height: 15px;
+      border: 2px solid transparent;
+      border-top-color: var(--accent-hi);
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+    }
+
+    #output {
+      font-size: 13px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      text-align: center;
+      min-height: 20px;
+      margin-bottom: 14px;
+      letter-spacing: 0.4px;
+      transition: color 0.2s;
+    }
+    #output.solved  { color: var(--success); font-weight: 700; }
+    #output.error   { color: var(--danger); }
+    #output.loading { color: var(--accent-hi); }
+
+    /* Board */
+    .board-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      width: 100%;
+      max-width: 740px;
+      display: flex;
+      justify-content: center;
+      overflow: visible;
+      position: relative;
+    }
+
+    #board {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-width: 660px;
+    }
+
+    /* ── Piece Tray ────────────────────────────────────────────── */
+    .tray-wrap {
+      width: 100%;
+      max-width: 740px;
+      margin-top: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px 18px;
+    }
+
+    .tray-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tray-title {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .tray-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .tray-pieces {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px 18px;
+      align-items: flex-start;
+    }
+
+    /* Each piece card in the tray */
+    .piece-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+      opacity: 1;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+    .piece-card:hover { transform: scale(1.06); }
+    .piece-card:active { cursor: grabbing; }
+    .piece-card.placed { opacity: 0.28; pointer-events: none; }
+    .piece-card.selected {
+      outline: 2px solid var(--accent-hi);
+      outline-offset: 4px;
+      border-radius: 6px;
+    }
+
+    .piece-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      text-align: center;
+      pointer-events: none;
+    }
+
+    /* Rotation buttons per piece */
+    .piece-rot-btns {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .rot-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-muted);
+      font-size: 11px;
+      padding: 2px 6px;
+      cursor: pointer;
+      line-height: 1.4;
+      transition: background 0.12s, color 0.12s;
+    }
+    .rot-btn:hover { background: #252f47; color: var(--text); }
+
+    /* Ghost dragged piece */
+    #drag-ghost {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.85;
+      display: none;
+    }
+
+    /* Drop highlight overlay on board */
+    .drop-valid   { filter: drop-shadow(0 0 6px rgba(76,175,80,0.9)); }
+    .drop-invalid { filter: drop-shadow(0 0 6px rgba(224,85,85,0.9)); }
+
+    /* Legend */
+    .legend {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      justify-content: center;
+      max-width: 740px;
+    }
+
+    .li {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .sw {
+      width: 13px; height: 13px;
+      border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.1);
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 480px) {
+      .controls { padding: 10px 12px; gap: 8px 12px; }
+      select { font-size: 13px; padding: 6px 8px; min-width: 72px; }
+      .btn { font-size: 12px; padding: 7px 10px; }
+      .tray-pieces { gap: 10px 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Calendar Puzzle</h1>
+  <p class="tagline">Cover every hex — leave month, day &amp; weekday exposed</p>
+</header>
+
+<div class="controls">
+  <div class="cg">
+    <label for="selMonth">Month</label>
+    <select id="selMonth">
+      <option>Jan</option><option>Feb</option><option>Mar</option>
+      <option>Apr</option><option>May</option><option>Jun</option>
+      <option>Jul</option><option>Aug</option><option>Sep</option>
+      <option>Oct</option><option>Nov</option><option>Dec</option>
+    </select>
+  </div>
+  <div class="cg">
+    <label for="selDay">Day</label>
+    <select id="selDay"></select>
+  </div>
+  <div class="cg">
+    <label for="selWeekday">Weekday</label>
+    <select id="selWeekday">
+      <option>Sun</option><option>Mon</option><option>Tue</option>
+      <option>Wed</option><option>Thu</option><option>Fri</option><option>Sat</option>
+    </select>
+  </div>
+  <div class="cg" style="flex-direction:row;gap:7px;align-items:flex-end;">
+    <button class="btn" id="todayBtn">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+      Today
+    </button>
+    <button class="btn primary" id="solveButton">
+      <span class="spinner" id="spinner"></span>
+      <svg id="solveIcon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Solve
+    </button>
+    <button class="btn" id="resetBtn">
+      <span class="btn-symbol">⟲</span>Reset
+    </button>
+  </div>
+</div>
+
+<div id="output">Choose a date above, then drag pieces or hit Solve</div>
+
+<div class="board-wrap">
+  <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+
+<!-- Piece tray -->
+<div class="tray-wrap" id="trayWrap">
+  <div class="tray-header">
+    <span class="tray-title">Pieces — drag onto the board</span>
+    <span class="tray-hint">Scroll or use ↻ ↺ to rotate · click a placed piece to remove it</span>
+  </div>
+  <div class="tray-pieces" id="trayPieces"></div>
+</div>
+
+<div class="legend" id="legend"></div>
+
+<!-- Ghost element for drag -->
+<svg id="drag-ghost" xmlns="http://www.w3.org/2000/svg"></svg>
+
+<script src="solver.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
