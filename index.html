@@ -282,6 +282,11 @@
       <svg id="solveIcon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       Solve
     </button>
+    <button class="btn" id="hintButton">
+      <span class="spinner" id="hintSpinner"></span>
+      <svg id="hintIcon" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.05V17h6v-.25c0-.85.4-1.55 1-2.05A7 7 0 0 0 12 2z"/></svg>
+      Hint
+    </button>
     <button class="btn" id="resetBtn">
       <span class="btn-symbol">⟲</span>Reset
     </button>
@@ -1154,6 +1159,9 @@ const outputEl   = document.getElementById("output");
 const solveBtn   = document.getElementById("solveButton");
 const spinner2   = document.getElementById("spinner");
 const solveIcon  = document.getElementById("solveIcon");
+const hintBtn    = document.getElementById("hintButton");
+const hintSpinner= document.getElementById("hintSpinner");
+const hintIcon   = document.getElementById("hintIcon");
 const legendEl   = document.getElementById("legend");
 const puzzleBox  = document.getElementById("puzzleBox");
 
@@ -1241,6 +1249,7 @@ solveBtn.addEventListener("click", () => {
     const m = selMonth.value, d = selDay.value, w = selWeekday.value;
     const hasFixedPieces = pieceStates.some(ps => ps.placed);
     solveBtn.disabled = true;
+    hintBtn.disabled = true;
     spinner2.style.display = "block";
     solveIcon.style.display = "none";
     setStatus(`Solving for ${w} · ${m} ${d}...`, "loading");
@@ -1252,6 +1261,7 @@ solveBtn.addEventListener("click", () => {
         const fixedState = manualState.map(row => row.slice());
         const result = solveCalendar(m, d, w, fixedState);
         solveBtn.disabled = false;
+        hintBtn.disabled = false;
         spinner2.style.display = "none";
         solveIcon.style.display = "block";
 
@@ -1272,6 +1282,75 @@ solveBtn.addEventListener("click", () => {
         drawBoard(manualState);
         setStatus(`✓ Solved! — ${w} · ${m} ${d}`, "solved");
         buildLegend();
+    }, 30));
+});
+
+hintBtn.addEventListener("click", () => {
+    const m = selMonth.value, d = selDay.value, w = selWeekday.value;
+    hintBtn.disabled = true;
+    solveBtn.disabled = true;
+    hintSpinner.style.display = "block";
+    hintIcon.style.display = "none";
+    setStatus(`Thinking of a hint for ${w} · ${m} ${d}...`, "loading");
+
+    requestAnimationFrame(() => setTimeout(() => {
+        // Keep whatever pieces are already on the board fixed in place, and
+        // only solve around them — same as Solve, but we'll only commit one
+        // piece from the result instead of the whole thing.
+        const fixedState = manualState.map(row => row.slice());
+        const result = solveCalendar(m, d, w, fixedState);
+        hintBtn.disabled = false;
+        solveBtn.disabled = false;
+        hintSpinner.style.display = "none";
+        hintIcon.style.display = "block";
+
+        if (!result.solved) {
+            setStatus(
+                pieceStates.some(ps => ps.placed)
+                    ? `No solution found for ${w} · ${m} ${d} with the current pieces kept in place`
+                    : `No solution found for ${w} · ${m} ${d}`,
+                "error"
+            );
+            return;
+        }
+
+        // Group the solved board's cells by piece color so we can find one
+        // piece that isn't already sitting on the board.
+        const cellsByColor = {};
+        for (let r = 0; r < result.solution.length; r++) {
+            for (let c = 0; c < result.solution[r].length; c++) {
+                const v = result.solution[r][c];
+                if (v > 0) (cellsByColor[v] = cellsByColor[v] || []).push([r, c]);
+            }
+        }
+
+        let targetIdx = -1;
+        for (let i = 0; i < pieceStates.length; i++) {
+            if (!pieceStates[i].placed && cellsByColor[i + 1]) { targetIdx = i; break; }
+        }
+
+        if (targetIdx === -1) {
+            setStatus(checkWin() ? "🎉 Puzzle solved! Well done!" : "Nothing left to hint — you're all set.", "solved");
+            return;
+        }
+
+        const cells = cellsByColor[targetIdx + 1];
+        const found = deriveRotAndAnchor(targetIdx, cells);
+        if (!found) return; // shouldn't happen if the solver's output is well-formed
+
+        const ps = pieceStates[targetIdx];
+        ps.rotIdx = found.rotIdx;
+        tryPlacePiece(targetIdx, getPieceCells(targetIdx, found.rotIdx), found.anchorRow, found.anchorCol);
+
+        redrawBoard();
+        renderFreePieces();
+
+        if (checkWin()) {
+            setStatus("🎉 Puzzle solved! Well done!", "solved");
+        } else {
+            const rem = pieceStates.filter(p => !p.placed).length;
+            setStatus(`💡 Hint: placed "${PIECE_NAMES[targetIdx]}" · ${rem} piece${rem !== 1 ? "s" : ""} remaining`);
+        }
     }, 30));
 });
 
