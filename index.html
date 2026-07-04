@@ -590,6 +590,7 @@ function drawBoard(board) {
                 poly.dataset.row = row;
                 poly.dataset.col = col;
                 poly.addEventListener("pointerdown", onBoardPieceDragStart, {passive: false});
+                poly.addEventListener("touchstart", blockNativeTouchScroll, {passive: false});
             }
             layer.appendChild(poly);
 
@@ -608,6 +609,7 @@ function drawBoard(board) {
                 text.dataset.row = row;
                 text.dataset.col = col;
                 text.addEventListener("pointerdown", onBoardPieceDragStart, {passive: false});
+                text.addEventListener("touchstart", blockNativeTouchScroll, {passive: false});
             }
             layer.appendChild(text);
         }
@@ -782,6 +784,7 @@ function buildPieceGroup(pieceIdx, centerX, centerY) {
 
     g.title = `${PIECE_NAMES[pieceIdx]} — drag anywhere, scroll or tap ↻↺ to rotate`;
     g.addEventListener("pointerdown", e => onPieceDragStart(e, pieceIdx), {passive: false});
+    g.addEventListener("touchstart", blockNativeTouchScroll, {passive: false});
     g.addEventListener("wheel", e => {
         e.preventDefault();
         rotatePiece(pieceIdx, e.deltaY > 0 ? 1 : -1);
@@ -825,6 +828,15 @@ function rotatePiece(pieceIdx, dir) {
 let dragPieceIdx = -1;
 let dragStart = null;
 let activePointerId = null;
+
+// Pointer Events' preventDefault() does NOT cancel native touch scrolling —
+// only a real touchstart/touchmove event's preventDefault() (or touch-action
+// CSS, which Safari doesn't fully honor on SVG elements) does that. These
+// listeners exist purely to stop the browser's own pan/scroll gesture from
+// competing with a single-finger drag; all the actual drag logic lives in
+// the Pointer Event handlers below.
+function blockNativeTouchScroll(e) { e.preventDefault(); }
+document.addEventListener("touchmove", e => { if (dragPieceIdx >= 0) e.preventDefault(); }, {passive: false});
 
 function getClientXY(e) {
     if (e.touches && e.touches.length) return [e.touches[0].clientX, e.touches[0].clientY];
