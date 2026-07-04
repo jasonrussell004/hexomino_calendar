@@ -289,7 +289,7 @@
 
 <div class="puzzle-header">
   <span class="puzzle-title">Board &amp; pieces</span>
-  <span class="puzzle-hint">Drag pieces anywhere in the box · scroll or tap ↻ ↺ to rotate · click a placed piece to remove it</span>
+  <span class="puzzle-hint">Drag pieces anywhere in the box · scroll or tap ↻ ↺ to rotate · drag a placed piece to move or remove it</span>
 </div>
 
 <div class="puzzle-box" id="puzzleBox">
@@ -505,6 +505,7 @@ function makeSVG(tag) {
 const PIECE_NAMES = Object.keys(PIECES);
 
 function computeLayout() {
+    // Natural (unshifted) board bounding box, using the raw boardToPixel formula.
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (let r = 0; r < BOARD.length; r++) {
         for (let c = 0; c < BOARD[r].length; c++) {
@@ -523,19 +524,34 @@ function computeLayout() {
     const trayW = trayCols * slot;
     const trayH = trayRows * slot;
     const gap = 26;
+    const pad = 16;
     const totalW = Math.max(boardW, trayW);
     const totalH = boardH + gap + trayH;
-    const pad = 16;
+
+    // BOARD_ORIGIN maps raw boardToPixel(row,col) output into world space,
+    // shifted so the board is horizontally centered within totalW and
+    // top-aligned at world y = 0.
+    const boardOrigin = {
+        x: (totalW - boardW) / 2 - minX,
+        y: -minY
+    };
+
+    // Tray region is likewise centered within totalW, placed below the board.
+    const trayX0 = (totalW - trayW) / 2;
+    const trayY0 = boardH + gap;
 
     return {
-        boardMinX: minX, boardMinY: minY, boardMaxX: maxX, boardMaxY: maxY,
-        trayX0: minX, trayY0: maxY + gap, trayCols, trayRows, slot,
-        viewX: minX - pad, viewY: minY - pad,
+        boardOrigin,
+        boardMinX: (totalW - boardW) / 2, boardMaxX: (totalW - boardW) / 2 + boardW,
+        boardMinY: 0, boardMaxY: boardH,
+        trayX0, trayY0, trayCols, trayRows, slot,
+        viewX: -pad, viewY: -pad,
         viewW: totalW + pad * 2, viewH: totalH + pad * 2
     };
 }
 
 const LAYOUT = computeLayout();
+const BOARD_ORIGIN = LAYOUT.boardOrigin;
 
 function initSVG() {
     const svg = document.getElementById("board");
@@ -558,7 +574,8 @@ function drawBoard(board) {
             const cell = board[row][col];
             if (cell === -1) continue;
 
-            const [x, y] = boardToPixel(row, col);
+            const [rawX, rawY] = boardToPixel(row, col);
+            const x = rawX + BOARD_ORIGIN.x, y = rawY + BOARD_ORIGIN.y;
 
             const poly = makeSVG("polygon");
             poly.setAttribute("points", hexPoints(x, y));
@@ -566,10 +583,11 @@ function drawBoard(board) {
             poly.setAttribute("stroke", "black");
             poly.setAttribute("stroke-width", "2");
             if (cell > 0) {
-                poly.style.cursor = "pointer";
+                poly.style.cursor = "grab";
                 poly.dataset.row = row;
                 poly.dataset.col = col;
-                poly.addEventListener("click", onBoardCellClick);
+                poly.addEventListener("mousedown", onBoardPieceDragStart);
+                poly.addEventListener("touchstart", onBoardPieceDragStart, {passive: false});
             }
             layer.appendChild(poly);
 
@@ -584,10 +602,11 @@ function drawBoard(board) {
             text.setAttribute("fill", cell === -2 ? "white" : "black");
             text.textContent = BOARD[row][col];
             if (cell > 0) {
-                text.style.cursor = "pointer";
+                text.style.cursor = "grab";
                 text.dataset.row = row;
                 text.dataset.col = col;
-                text.addEventListener("click", onBoardCellClick);
+                text.addEventListener("mousedown", onBoardPieceDragStart);
+                text.addEventListener("touchstart", onBoardPieceDragStart, {passive: false});
             }
             layer.appendChild(text);
         }
@@ -625,20 +644,46 @@ function initManualState() {
 
 function redrawBoard() { drawBoard(manualState); }
 
-function onBoardCellClick(e) {
+function removePieceFromBoard(pieceIdx) {
+    const ps = pieceStates[pieceIdx];
+    if (!ps.placed) return;
+    const cells = getPieceCells(pieceIdx, ps.rotIdx);
+    const coords = cells.map(([dr, dc]) => [ps.anchorRow + dr, ps.anchorCol + dc]);
+    const colorIdx = pieceIdx + 1;
+    for (const [r, c] of coords) {
+        if (manualState[r] && manualState[r][c] === colorIdx) manualState[r][c] = 0;
+    }
+    ps.placed = false;
+}
+
+// Picking up a piece that's already snapped onto the board: detach it from
+// the board (without visually moving it) and hand off straight into the
+// normal free-drag flow, so it can be dropped on a new cell or out in the
+// open box.
+function onBoardPieceDragStart(e) {
+    e.preventDefault();
     const r = parseInt(e.target.dataset.row);
     const c = parseInt(e.target.dataset.col);
     if (isNaN(r) || isNaN(c)) return;
     const colorIdx = manualState[r][c];
     if (colorIdx <= 0) return;
     const pieceIdx = colorIdx - 1;
-    for (let rr = 0; rr < manualState.length; rr++)
-        for (let cc = 0; cc < manualState[rr].length; cc++)
-            if (manualState[rr][cc] === colorIdx) manualState[rr][cc] = 0;
-    pieceStates[pieceIdx].placed = false;
+    const ps = pieceStates[pieceIdx];
+
+    // Compute the piece's current world position (matches where it's drawn
+    // on the board right now) so it doesn't jump when it becomes "free".
+    const b = pieceLocalBounds(pieceIdx, ps.rotIdx);
+    const [rawAnchorX, rawAnchorY] = boardToPixel(ps.anchorRow, ps.anchorCol);
+    const anchorWorldX = rawAnchorX + BOARD_ORIGIN.x, anchorWorldY = rawAnchorY + BOARD_ORIGIN.y;
+    ps.x = anchorWorldX - b.pts[0][0] + b.cx;
+    ps.y = anchorWorldY - b.pts[0][1] + b.cy;
+
+    removePieceFromBoard(pieceIdx);
     redrawBoard();
     renderFreePieces();
-    setStatus(`"${PIECE_NAMES[pieceIdx]}" removed — drag it back onto the board`);
+
+    const [cx, cy] = getClientXY(e);
+    beginDrag(pieceIdx, cx, cy);
 }
 
 function tryPlacePiece(pieceIdx, cells, anchorRow, anchorCol) {
@@ -649,7 +694,10 @@ function tryPlacePiece(pieceIdx, cells, anchorRow, anchorCol) {
         if (manualState[r][c] !== 0) return false;
     }
     for (const [r, c] of coords) manualState[r][c] = colorIdx;
-    pieceStates[pieceIdx].placed = true;
+    const ps = pieceStates[pieceIdx];
+    ps.placed = true;
+    ps.anchorRow = anchorRow;
+    ps.anchorCol = anchorCol;
     return true;
 }
 
@@ -795,6 +843,10 @@ function screenToLocal(cx, cy) {
 function onPieceDragStart(e, pieceIdx) {
     e.preventDefault();
     const [cx, cy] = getClientXY(e);
+    beginDrag(pieceIdx, cx, cy);
+}
+
+function beginDrag(pieceIdx, cx, cy) {
     const loc = screenToLocal(cx, cy);
     if (!loc) return;
     dragPieceIdx = pieceIdx;
@@ -891,9 +943,14 @@ function getHoveredBoardCell(pieceIdx) {
         return null;
     }
 
+    // Convert world anchor position into the raw (unshifted) board-local
+    // space that boardToPixel(row,col) operates in.
+    const localX = anchorX - BOARD_ORIGIN.x;
+    const localY = anchorY - BOARD_ORIGIN.y;
+
     // Invert boardToPixel: x=1.5*R*row → row; y=√3*R*(col-row/2) → col
-    const rowF = anchorX / (1.5 * HEX_RADIUS);
-    const colF = anchorY / (Math.sqrt(3) * HEX_RADIUS) + rowF / 2;
+    const rowF = localX / (1.5 * HEX_RADIUS);
+    const colF = localY / (Math.sqrt(3) * HEX_RADIUS) + rowF / 2;
 
     // Search a neighbourhood of candidate cells (axial rounding can be ambiguous at corners)
     const candidates = [];
@@ -905,7 +962,7 @@ function getHoveredBoardCell(pieceIdx) {
     let best = null, bestDist = Infinity;
     for (const [row, col] of candidates) {
         const [cx2, cy2] = boardToPixel(row, col);
-        const dist = Math.hypot(anchorX - cx2, anchorY - cy2);
+        const dist = Math.hypot(localX - cx2, localY - cy2);
         if (dist < bestDist) { bestDist = dist; best = [row, col]; }
     }
 
