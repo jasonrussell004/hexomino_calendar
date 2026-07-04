@@ -194,14 +194,17 @@
       transition: opacity 0.2s;
     }
 
+    #board, #board * {
+      touch-action: none;
+    }
+
     #board {
       display: block;
       width: 100%;
       height: auto;
-      touch-action: none;
     }
 
-    .piece-group { cursor: grab; }
+    .piece-group { cursor: grab; touch-action: none; }
     .piece-group.dragging { cursor: grabbing; }
     .piece-group .rot-btn-bg { fill: var(--surface2); stroke: var(--border); }
     .piece-group .rot-btn-txt { fill: var(--text-muted); }
@@ -586,8 +589,7 @@ function drawBoard(board) {
                 poly.style.cursor = "grab";
                 poly.dataset.row = row;
                 poly.dataset.col = col;
-                poly.addEventListener("mousedown", onBoardPieceDragStart);
-                poly.addEventListener("touchstart", onBoardPieceDragStart, {passive: false});
+                poly.addEventListener("pointerdown", onBoardPieceDragStart, {passive: false});
             }
             layer.appendChild(poly);
 
@@ -605,8 +607,7 @@ function drawBoard(board) {
                 text.style.cursor = "grab";
                 text.dataset.row = row;
                 text.dataset.col = col;
-                text.addEventListener("mousedown", onBoardPieceDragStart);
-                text.addEventListener("touchstart", onBoardPieceDragStart, {passive: false});
+                text.addEventListener("pointerdown", onBoardPieceDragStart, {passive: false});
             }
             layer.appendChild(text);
         }
@@ -661,6 +662,7 @@ function removePieceFromBoard(pieceIdx) {
 // normal free-drag flow, so it can be dropped on a new cell or out in the
 // open box.
 function onBoardPieceDragStart(e) {
+    if (dragPieceIdx >= 0) return; // a drag is already in progress on another finger
     e.preventDefault();
     const r = parseInt(e.target.dataset.row);
     const c = parseInt(e.target.dataset.col);
@@ -683,7 +685,7 @@ function onBoardPieceDragStart(e) {
     renderFreePieces();
 
     const [cx, cy] = getClientXY(e);
-    beginDrag(pieceIdx, cx, cy);
+    beginDrag(pieceIdx, cx, cy, e.pointerId, e.target);
 }
 
 function tryPlacePiece(pieceIdx, cells, anchorRow, anchorCol) {
@@ -771,8 +773,7 @@ function buildPieceGroup(pieceIdx, centerX, centerY) {
         txt.textContent = symbol;
         btn.appendChild(bg);
         btn.appendChild(txt);
-        btn.addEventListener("mousedown", e => e.stopPropagation());
-        btn.addEventListener("touchstart", e => e.stopPropagation(), {passive: false});
+        btn.addEventListener("pointerdown", e => e.stopPropagation());
         btn.addEventListener("click", e => { e.stopPropagation(); rotatePiece(pieceIdx, dir); });
         return btn;
     };
@@ -780,8 +781,7 @@ function buildPieceGroup(pieceIdx, centerX, centerY) {
     g.appendChild(mkRotBtn(16, "↻", 1));
 
     g.title = `${PIECE_NAMES[pieceIdx]} — drag anywhere, scroll or tap ↻↺ to rotate`;
-    g.addEventListener("mousedown", e => onPieceDragStart(e, pieceIdx));
-    g.addEventListener("touchstart", e => onPieceDragStart(e, pieceIdx), {passive: false});
+    g.addEventListener("pointerdown", e => onPieceDragStart(e, pieceIdx), {passive: false});
     g.addEventListener("wheel", e => {
         e.preventDefault();
         rotatePiece(pieceIdx, e.deltaY > 0 ? 1 : -1);
@@ -824,6 +824,7 @@ function rotatePiece(pieceIdx, dir) {
 ═══════════════════════════════════════════════════════════ */
 let dragPieceIdx = -1;
 let dragStart = null;
+let activePointerId = null;
 
 function getClientXY(e) {
     if (e.touches && e.touches.length) return [e.touches[0].clientX, e.touches[0].clientY];
@@ -841,27 +842,35 @@ function screenToLocal(cx, cy) {
 }
 
 function onPieceDragStart(e, pieceIdx) {
+    if (dragPieceIdx >= 0) return; // a drag is already in progress on another finger
     e.preventDefault();
     const [cx, cy] = getClientXY(e);
-    beginDrag(pieceIdx, cx, cy);
+    beginDrag(pieceIdx, cx, cy, e.pointerId, e.target);
 }
 
-function beginDrag(pieceIdx, cx, cy) {
+function beginDrag(pieceIdx, cx, cy, pointerId, captureEl) {
     const loc = screenToLocal(cx, cy);
     if (!loc) return;
     dragPieceIdx = pieceIdx;
+    activePointerId = pointerId;
     const ps = pieceStates[pieceIdx];
     dragStart = { pointerX: loc.x, pointerY: loc.y, pieceX: ps.x, pieceY: ps.y };
-    document.addEventListener("mousemove", onPieceDragMove);
-    document.addEventListener("touchmove", onPieceDragMove, {passive: false});
-    document.addEventListener("mouseup", onPieceDragEnd);
-    document.addEventListener("touchend", onPieceDragEnd);
+    // Pointer capture keeps this exact pointer's events routed to us even if
+    // it moves off the original element, and stops other browser gestures
+    // (like page panning) from hijacking a single-finger drag.
+    if (captureEl && captureEl.setPointerCapture && pointerId !== undefined) {
+        try { captureEl.setPointerCapture(pointerId); } catch (err) {}
+    }
+    document.addEventListener("pointermove", onPieceDragMove, {passive: false});
+    document.addEventListener("pointerup", onPieceDragEnd);
+    document.addEventListener("pointercancel", onPieceDragEnd);
 }
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 function onPieceDragMove(e) {
     if (dragPieceIdx < 0) return;
+    if (e.pointerId !== undefined && e.pointerId !== activePointerId) return;
     e.preventDefault();
     const [cx, cy] = getClientXY(e);
     const loc = screenToLocal(cx, cy);
@@ -877,10 +886,11 @@ function onPieceDragMove(e) {
 }
 
 function onPieceDragEnd(e) {
-    document.removeEventListener("mousemove", onPieceDragMove);
-    document.removeEventListener("touchmove", onPieceDragMove);
-    document.removeEventListener("mouseup", onPieceDragEnd);
-    document.removeEventListener("touchend", onPieceDragEnd);
+    if (e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
+    document.removeEventListener("pointermove", onPieceDragMove);
+    document.removeEventListener("pointerup", onPieceDragEnd);
+    document.removeEventListener("pointercancel", onPieceDragEnd);
+    activePointerId = null;
     document.getElementById("board").setAttribute("class", "");
 
     if (dragPieceIdx < 0) return;
