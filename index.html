@@ -379,7 +379,7 @@ const PIECE_ROTATIONS = Object.fromEntries(
 const NEIGHBOR_COORDS = [[-1,0], [1,0], [0,-1], [0,1], [1,1], [-1,-1]];
 
 class PuzzleSolver {
-    constructor(board, targetMonth, targetDay, targetWeekday) {
+    constructor(board, targetMonth, targetDay, targetWeekday, fixedState = null) {
         this.board = board;
         this.targetMonth = targetMonth;
         this.targetDay = targetDay;
@@ -388,12 +388,25 @@ class PuzzleSolver {
         this.cols = board[0].length;
         this.solution = [];
         this.usedPieces = {};
+        this.fixedState = fixedState; // pieces already on the board that must stay put
         this.solverSetup();
     }
 
     solverSetup() {
-        this.solution = boardToSolution(BOARD, this.targetMonth, this.targetDay, this.targetWeekday);
+        this.solution = this.fixedState
+            ? this.fixedState.map(row => row.slice())
+            : boardToSolution(BOARD, this.targetMonth, this.targetDay, this.targetWeekday);
         this.usedPieces = Object.fromEntries(Object.entries(PIECES).map(([name]) => [name, false]));
+        if (this.fixedState) {
+            // Any piece already present in the fixed state is locked in: mark it
+            // used so the solver treats those cells as filled and never tries to
+            // place (or displace) that piece elsewhere.
+            const placedColors = new Set();
+            for (const row of this.solution) for (const v of row) if (v > 0) placedColors.add(v);
+            PIECE_NAMES.forEach((name, i) => {
+                if (placedColors.has(i + 1)) this.usedPieces[name] = true;
+            });
+        }
     }
 
     hasUnfillableHoles() {
@@ -460,8 +473,8 @@ class PuzzleSolver {
     }
 }
 
-function solveCalendar(month, day, weekday) {
-    const solver = new PuzzleSolver(BOARD, month, day, weekday);
+function solveCalendar(month, day, weekday, fixedState = null) {
+    const solver = new PuzzleSolver(BOARD, month, day, weekday, fixedState);
     return { solved: solver.solve(), solution: solver.solution };
 }
 
@@ -632,15 +645,17 @@ function getPieceCells(pieceIdx, rotIdx) {
     return rots[rotIdx % rots.length];
 }
 
-function initManualState() {
+function initManualState(hardReset = false) {
     const m = selMonth.value, d = selDay.value, w = selWeekday.value;
     manualState = boardToSolution(BOARD, m, d, w);
-    // Preserve free (x,y) positions across date changes where possible, else assign defaults.
+    // Preserve free (x,y) positions across date changes where possible, else assign
+    // defaults — unless hardReset is requested, in which case every piece goes back
+    // to its original tray slot regardless of where it was before.
     pieceStates = PIECE_NAMES.map((_, i) => ({
-        rotIdx: pieceStates[i] ? pieceStates[i].rotIdx : 0,
+        rotIdx: (!hardReset && pieceStates[i]) ? pieceStates[i].rotIdx : 0,
         placed: false,
-        x: pieceStates[i] ? pieceStates[i].x : undefined,
-        y: pieceStates[i] ? pieceStates[i].y : undefined
+        x: (!hardReset && pieceStates[i]) ? pieceStates[i].x : undefined,
+        y: (!hardReset && pieceStates[i]) ? pieceStates[i].y : undefined
     }));
     isAutoSolved = false;
 }
@@ -1162,10 +1177,10 @@ function setStatus(msg, cls = "") { outputEl.textContent = msg; outputEl.classNa
 
 initSVG();
 
-function drawInitial() {
+function drawInitial(hardReset = false) {
     legendEl.innerHTML = "";
     puzzleBox.style.opacity = "1";
-    initManualState();
+    initManualState(hardReset);
     redrawBoard();
     renderFreePieces();
     setStatus(`${selWeekday.value} · ${selMonth.value} ${selDay.value} — drag pieces onto the board`);
@@ -1173,14 +1188,58 @@ function drawInitial() {
 
 drawInitial();
 
-selMonth.addEventListener("change",   drawInitial);
-selDay.addEventListener("change",     drawInitial);
-selWeekday.addEventListener("change", drawInitial);
+selMonth.addEventListener("change",   () => drawInitial());
+selDay.addEventListener("change",     () => drawInitial());
+selWeekday.addEventListener("change", () => drawInitial());
 document.getElementById("todayBtn").addEventListener("click", () => { applyToday(); drawInitial(); });
-document.getElementById("resetBtn").addEventListener("click", () => { legendEl.innerHTML = ""; drawInitial(); });
+document.getElementById("resetBtn").addEventListener("click", () => { legendEl.innerHTML = ""; drawInitial(true); });
+
+// After solving, figure out which rotation + anchor cell reproduces a given
+// piece's actual cells in the solution, so it stays draggable afterward
+// (removePieceFromBoard needs a rotIdx/anchor that matches what's drawn).
+function deriveRotAndAnchor(pieceIdx, cells) {
+    const name = PIECE_NAMES[pieceIdx];
+    const cellKey = ([r, c]) => `${r},${c}`;
+    const cellSet = new Set(cells.map(cellKey));
+    const rots = PIECE_ROTATIONS[name];
+    for (let rotIdx = 0; rotIdx < rots.length; rotIdx++) {
+        const orientation = rots[rotIdx];
+        for (const [ar, ac] of cells) {
+            const anchorRow = ar - orientation[0][0];
+            const anchorCol = ac - orientation[0][1];
+            const mapped = orientation.map(([dr, dc]) => cellKey([anchorRow + dr, anchorCol + dc]));
+            if (mapped.length === cellSet.size && mapped.every(k => cellSet.has(k))) {
+                return { rotIdx, anchorRow, anchorCol };
+            }
+        }
+    }
+    return null;
+}
+
+function syncPieceStatesFromSolution(solution) {
+    const cellsByColor = {};
+    for (let r = 0; r < solution.length; r++) {
+        for (let c = 0; c < solution[r].length; c++) {
+            const v = solution[r][c];
+            if (v > 0) (cellsByColor[v] = cellsByColor[v] || []).push([r, c]);
+        }
+    }
+    pieceStates.forEach((ps, i) => {
+        const cells = cellsByColor[i + 1];
+        if (!cells) { ps.placed = false; return; }
+        const found = deriveRotAndAnchor(i, cells);
+        if (found) {
+            ps.placed = true;
+            ps.rotIdx = found.rotIdx;
+            ps.anchorRow = found.anchorRow;
+            ps.anchorCol = found.anchorCol;
+        }
+    });
+}
 
 solveBtn.addEventListener("click", () => {
     const m = selMonth.value, d = selDay.value, w = selWeekday.value;
+    const hasFixedPieces = pieceStates.some(ps => ps.placed);
     solveBtn.disabled = true;
     spinner2.style.display = "block";
     solveIcon.style.display = "none";
@@ -1188,16 +1247,29 @@ solveBtn.addEventListener("click", () => {
     legendEl.innerHTML = "";
 
     requestAnimationFrame(() => setTimeout(() => {
-        const result = solveCalendar(m, d, w);
+        // Keep whatever pieces are already on the board fixed in place, and
+        // only solve around them.
+        const fixedState = manualState.map(row => row.slice());
+        const result = solveCalendar(m, d, w, fixedState);
         solveBtn.disabled = false;
         spinner2.style.display = "none";
         solveIcon.style.display = "block";
 
-        if (!result.solved) { setStatus(`No solution found for ${w} · ${m} ${d}`, "error"); return; }
+        if (!result.solved) {
+            setStatus(
+                hasFixedPieces
+                    ? `No solution found for ${w} · ${m} ${d} with the current pieces kept in place`
+                    : `No solution found for ${w} · ${m} ${d}`,
+                "error"
+            );
+            return;
+        }
 
         isAutoSolved = true;
+        manualState = result.solution.map(row => row.slice());
+        syncPieceStatesFromSolution(manualState);
         document.getElementById("freeLayer").innerHTML = "";
-        drawBoard(result.solution);
+        drawBoard(manualState);
         setStatus(`✓ Solved! — ${w} · ${m} ${d}`, "solved");
         buildLegend();
     }, 30));
