@@ -157,46 +157,19 @@
     #output.error   { color: var(--danger); }
     #output.loading { color: var(--accent-hi); }
 
-    .board-wrap {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px;
-      width: 100%;
-      max-width: 740px;
-      display: flex;
-      justify-content: center;
-      overflow: visible;
-      position: relative;
-    }
-
-    #board {
-      display: block;
-      width: 100%;
-      height: auto;
-      max-width: 660px;
-    }
-
-    .tray-wrap {
-      width: 100%;
-      max-width: 740px;
-      margin-top: 16px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px 18px 18px;
-    }
-
-    .tray-header {
+    /* ── merged board + tray box ─────────────────────────── */
+    .puzzle-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 12px;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px 14px;
+      width: 100%;
+      max-width: 740px;
+      margin-bottom: 8px;
     }
 
-    .tray-title {
+    .puzzle-title {
       font-size: 10px;
       font-weight: 600;
       letter-spacing: 2px;
@@ -204,68 +177,35 @@
       color: var(--text-muted);
     }
 
-    .tray-hint {
+    .puzzle-hint {
       font-size: 11px;
       color: var(--text-muted);
       font-style: italic;
     }
 
-    .tray-pieces {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 14px 18px;
-      align-items: flex-start;
-    }
-
-    .piece-card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      cursor: grab;
-      user-select: none;
-      touch-action: none;
-      opacity: 1;
-      transition: opacity 0.2s, transform 0.15s;
-    }
-    .piece-card:hover { transform: scale(1.06); }
-    .piece-card:active { cursor: grabbing; }
-    .piece-card.placed { opacity: 0.28; pointer-events: none; }
-
-    .piece-label {
-      font-size: 10px;
-      color: var(--text-muted);
-      font-family: var(--mono);
-      text-align: center;
-      pointer-events: none;
-    }
-
-    .piece-rot-btns {
-      display: flex;
-      gap: 4px;
-      align-items: center;
-    }
-
-    .rot-btn {
-      background: var(--surface2);
+    .puzzle-box {
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 4px;
-      color: var(--text-muted);
-      font-size: 11px;
-      padding: 2px 6px;
-      cursor: pointer;
-      line-height: 1.4;
-      transition: background 0.12s, color 0.12s;
+      border-radius: 10px;
+      padding: 14px;
+      width: 100%;
+      max-width: 740px;
+      position: relative;
+      transition: opacity 0.2s;
     }
-    .rot-btn:hover { background: #252f47; color: var(--text); }
 
-    #drag-ghost {
-      position: fixed;
-      pointer-events: none;
-      z-index: 9999;
-      opacity: 0.85;
-      display: none;
+    #board {
+      display: block;
+      width: 100%;
+      height: auto;
+      touch-action: none;
     }
+
+    .piece-group { cursor: grab; }
+    .piece-group.dragging { cursor: grabbing; }
+    .piece-group .rot-btn-bg { fill: var(--surface2); stroke: var(--border); }
+    .piece-group .rot-btn-txt { fill: var(--text-muted); }
+    .piece-group:hover .rot-btn-bg { stroke: var(--border-hi); }
 
     .drop-valid   { filter: drop-shadow(0 0 6px rgba(76,175,80,0.9)); }
     .drop-invalid { filter: drop-shadow(0 0 6px rgba(224,85,85,0.9)); }
@@ -298,7 +238,6 @@
       .controls { padding: 10px 12px; gap: 8px 12px; }
       select { font-size: 13px; padding: 6px 8px; min-width: 72px; }
       .btn { font-size: 12px; padding: 7px 10px; }
-      .tray-pieces { gap: 10px 12px; }
     }
   </style>
 </head>
@@ -348,21 +287,16 @@
 
 <div id="output">Choose a date above, then drag pieces or hit Solve</div>
 
-<div class="board-wrap">
+<div class="puzzle-header">
+  <span class="puzzle-title">Board &amp; pieces</span>
+  <span class="puzzle-hint">Drag pieces anywhere in the box · scroll or tap ↻ ↺ to rotate · click a placed piece to remove it</span>
+</div>
+
+<div class="puzzle-box" id="puzzleBox">
   <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
 </div>
 
-<div class="tray-wrap" id="trayWrap">
-  <div class="tray-header">
-    <span class="tray-title">Pieces — drag onto the board</span>
-    <span class="tray-hint">Scroll or use ↻ ↺ to rotate · click a placed piece to remove it</span>
-  </div>
-  <div class="tray-pieces" id="trayPieces"></div>
-</div>
-
 <div class="legend" id="legend"></div>
-
-<svg id="drag-ghost" xmlns="http://www.w3.org/2000/svg"></svg>
 
 <script>
 "use strict";
@@ -561,10 +495,63 @@ function makeSVG(tag) {
     return document.createElementNS("http://www.w3.org/2000/svg", tag);
 }
 
-function drawBoard(board) {
+/* ═══════════════════════════════════════════════════════════
+   Merged board + tray layout
+   The whole SVG is one shared coordinate space: the calendar
+   grid occupies the top region, and the open "tray" region
+   below it is free space where loose pieces can be dropped
+   anywhere.
+═══════════════════════════════════════════════════════════ */
+const PIECE_NAMES = Object.keys(PIECES);
+
+function computeLayout() {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let r = 0; r < BOARD.length; r++) {
+        for (let c = 0; c < BOARD[r].length; c++) {
+            if (BOARD[r][c] === null) continue;
+            const [x, y] = boardToPixel(r, c);
+            minX = Math.min(minX, x - HEX_RADIUS);
+            maxX = Math.max(maxX, x + HEX_RADIUS);
+            minY = Math.min(minY, y - HEX_RADIUS);
+            maxY = Math.max(maxY, y + HEX_RADIUS);
+        }
+    }
+    const boardW = maxX - minX, boardH = maxY - minY;
+    const trayCols = 4;
+    const slot = 150;
+    const trayRows = Math.ceil(PIECE_NAMES.length / trayCols);
+    const trayW = trayCols * slot;
+    const trayH = trayRows * slot;
+    const gap = 26;
+    const totalW = Math.max(boardW, trayW);
+    const totalH = boardH + gap + trayH;
+    const pad = 16;
+
+    return {
+        boardMinX: minX, boardMinY: minY, boardMaxX: maxX, boardMaxY: maxY,
+        trayX0: minX, trayY0: maxY + gap, trayCols, trayRows, slot,
+        viewX: minX - pad, viewY: minY - pad,
+        viewW: totalW + pad * 2, viewH: totalH + pad * 2
+    };
+}
+
+const LAYOUT = computeLayout();
+
+function initSVG() {
     const svg = document.getElementById("board");
     svg.innerHTML = "";
-    const centers = [];
+    svg.setAttribute("viewBox", `${LAYOUT.viewX} ${LAYOUT.viewY} ${LAYOUT.viewW} ${LAYOUT.viewH}`);
+    const boardLayer = makeSVG("g");
+    boardLayer.id = "boardLayer";
+    svg.appendChild(boardLayer);
+    const freeLayer = makeSVG("g");
+    freeLayer.id = "freeLayer";
+    svg.appendChild(freeLayer);
+}
+
+function drawBoard(board) {
+    const layer = document.getElementById("boardLayer");
+    layer.innerHTML = "";
 
     for (let row = 0; row < board.length; row++) {
         for (let col = 0; col < board[row].length; col++) {
@@ -572,7 +559,6 @@ function drawBoard(board) {
             if (cell === -1) continue;
 
             const [x, y] = boardToPixel(row, col);
-            centers.push([x, y]);
 
             const poly = makeSVG("polygon");
             poly.setAttribute("points", hexPoints(x, y));
@@ -585,7 +571,7 @@ function drawBoard(board) {
                 poly.dataset.col = col;
                 poly.addEventListener("click", onBoardCellClick);
             }
-            svg.appendChild(poly);
+            layer.appendChild(poly);
 
             const text = makeSVG("text");
             text.setAttribute("x", x);
@@ -603,25 +589,14 @@ function drawBoard(board) {
                 text.dataset.col = col;
                 text.addEventListener("click", onBoardCellClick);
             }
-            svg.appendChild(text);
+            layer.appendChild(text);
         }
     }
-
-    if (!centers.length) return;
-
-    try {
-        const bb = svg.getBBox();
-        if (bb && bb.width > 0) {
-            const p = 10;
-            svg.setAttribute("viewBox", `${bb.x - p} ${bb.y - p} ${bb.width + p * 2} ${bb.height + p * 2}`);
-        }
-    } catch(e) {}
 }
 
 /* ═══════════════════════════════════════════════════════════
    Manual play state
 ═══════════════════════════════════════════════════════════ */
-const PIECE_NAMES = Object.keys(PIECES);
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const WEEKDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
@@ -638,7 +613,13 @@ function getPieceCells(pieceIdx, rotIdx) {
 function initManualState() {
     const m = selMonth.value, d = selDay.value, w = selWeekday.value;
     manualState = boardToSolution(BOARD, m, d, w);
-    pieceStates = PIECE_NAMES.map(() => ({rotIdx: 0, placed: false}));
+    // Preserve free (x,y) positions across date changes where possible, else assign defaults.
+    pieceStates = PIECE_NAMES.map((_, i) => ({
+        rotIdx: pieceStates[i] ? pieceStates[i].rotIdx : 0,
+        placed: false,
+        x: pieceStates[i] ? pieceStates[i].x : undefined,
+        y: pieceStates[i] ? pieceStates[i].y : undefined
+    }));
     isAutoSolved = false;
 }
 
@@ -656,7 +637,7 @@ function onBoardCellClick(e) {
             if (manualState[rr][cc] === colorIdx) manualState[rr][cc] = 0;
     pieceStates[pieceIdx].placed = false;
     redrawBoard();
-    renderTray();
+    renderFreePieces();
     setStatus(`"${PIECE_NAMES[pieceIdx]}" removed — drag it back onto the board`);
 }
 
@@ -680,117 +661,102 @@ function checkWin() {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   Tray rendering
+   Free piece rendering (loose pieces anywhere in the box)
 ═══════════════════════════════════════════════════════════ */
-function renderPieceSVG(pieceIdx, rotIdx) {
+function pieceLocalBounds(pieceIdx, rotIdx) {
     const cells = getPieceCells(pieceIdx, rotIdx);
-    const color = COLORS[String(pieceIdx + 1)];
-    const pts = cells.map(([row, col]) => boardToPixel(row, col));
-    const minX = Math.min(...pts.map(([x]) => x));
-    const minY = Math.min(...pts.map(([,y]) => y));
-    const maxX = Math.max(...pts.map(([x]) => x));
-    const maxY = Math.max(...pts.map(([,y]) => y));
-    const pad = HEX_RADIUS + 2;
-    const W = (maxX - minX) + 2 * pad;
-    const H = (maxY - minY) + 2 * pad;
+    const pts = cells.map(([r, c]) => boardToPixel(r, c));
+    const minX = Math.min(...pts.map(p => p[0]));
+    const maxX = Math.max(...pts.map(p => p[0]));
+    const minY = Math.min(...pts.map(p => p[1]));
+    const maxY = Math.max(...pts.map(p => p[1]));
+    return { cells, pts, minX, maxX, minY, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+}
 
-    const svg = makeSVG("svg");
-    svg.setAttribute("width", String(Math.ceil(W)));
-    svg.setAttribute("height", String(Math.ceil(H)));
-    svg.setAttribute("viewBox", `${minX - pad} ${minY - pad} ${W} ${H}`);
-    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-    pts.forEach(([x, y]) => {
+function buildPieceGroup(pieceIdx, centerX, centerY) {
+    const ps = pieceStates[pieceIdx];
+    const color = COLORS[String(pieceIdx + 1)];
+    const b = pieceLocalBounds(pieceIdx, ps.rotIdx);
+
+    const g = makeSVG("g");
+    g.setAttribute("class", "piece-group");
+    g.setAttribute("transform", `translate(${centerX - b.cx},${centerY - b.cy})`);
+
+    b.pts.forEach(([x, y]) => {
         const poly = makeSVG("polygon");
         poly.setAttribute("points", hexPoints(x, y));
         poly.setAttribute("fill", color);
         poly.setAttribute("stroke", "black");
         poly.setAttribute("stroke-width", "1.5");
-        svg.appendChild(poly);
+        g.appendChild(poly);
     });
-    return svg;
+
+    const label = makeSVG("text");
+    label.setAttribute("x", b.cx);
+    label.setAttribute("y", b.maxY + 16);
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("font-size", "11");
+    label.setAttribute("font-family", "monospace");
+    label.setAttribute("fill", "#5a6e8a");
+    label.style.pointerEvents = "none";
+    label.textContent = PIECE_NAMES[pieceIdx];
+    g.appendChild(label);
+
+    const btnY = b.minY - 11;
+    const mkRotBtn = (dx, symbol, dir) => {
+        const btn = makeSVG("g");
+        btn.style.cursor = "pointer";
+        const bg = makeSVG("circle");
+        bg.setAttribute("class", "rot-btn-bg");
+        bg.setAttribute("cx", b.cx + dx);
+        bg.setAttribute("cy", btnY);
+        bg.setAttribute("r", "9");
+        const txt = makeSVG("text");
+        txt.setAttribute("class", "rot-btn-txt");
+        txt.setAttribute("x", b.cx + dx);
+        txt.setAttribute("y", btnY);
+        txt.setAttribute("text-anchor", "middle");
+        txt.setAttribute("dominant-baseline", "middle");
+        txt.setAttribute("dy", "0.05em");
+        txt.setAttribute("font-size", "11");
+        txt.style.pointerEvents = "none";
+        txt.textContent = symbol;
+        btn.appendChild(bg);
+        btn.appendChild(txt);
+        btn.addEventListener("mousedown", e => e.stopPropagation());
+        btn.addEventListener("touchstart", e => e.stopPropagation(), {passive: false});
+        btn.addEventListener("click", e => { e.stopPropagation(); rotatePiece(pieceIdx, dir); });
+        return btn;
+    };
+    g.appendChild(mkRotBtn(-16, "↺", -1));
+    g.appendChild(mkRotBtn(16, "↻", 1));
+
+    g.title = `${PIECE_NAMES[pieceIdx]} — drag anywhere, scroll or tap ↻↺ to rotate`;
+    g.addEventListener("mousedown", e => onPieceDragStart(e, pieceIdx));
+    g.addEventListener("touchstart", e => onPieceDragStart(e, pieceIdx), {passive: false});
+    g.addEventListener("wheel", e => {
+        e.preventDefault();
+        rotatePiece(pieceIdx, e.deltaY > 0 ? 1 : -1);
+    }, {passive: false});
+
+    return g;
 }
 
-function buildGhostSVG(pieceIdx, rotIdx) {
-    const cells = getPieceCells(pieceIdx, rotIdx);
-    const color = COLORS[String(pieceIdx + 1)];
-    const pts = cells.map(([row, col]) => boardToPixel(row, col));
-    const minX = Math.min(...pts.map(([x]) => x));
-    const minY = Math.min(...pts.map(([,y]) => y));
-    const maxX = Math.max(...pts.map(([x]) => x));
-    const maxY = Math.max(...pts.map(([,y]) => y));
-    const pad = HEX_RADIUS + 2;
-    const W = (maxX - minX) + 2 * pad;
-    const H = (maxY - minY) + 2 * pad;
-
-    const ghost = document.getElementById("drag-ghost");
-    ghost.innerHTML = "";
-    ghost.setAttribute("width",  String(Math.ceil(W)));
-    ghost.setAttribute("height", String(Math.ceil(H)));
-    ghost.setAttribute("viewBox", `${minX - pad} ${minY - pad} ${W} ${H}`);
-
-    // Cursor anchors to the first cell of the piece
-    ghost.offsetX = pts[0][0] - (minX - pad);
-    ghost.offsetY = pts[0][1] - (minY - pad);
-    ghost.cells = cells;
-    ghost.pieceIdx = pieceIdx;
-
-    pts.forEach(([x, y]) => {
-        const poly = makeSVG("polygon");
-        poly.setAttribute("points", hexPoints(x, y));
-        poly.setAttribute("fill", color);
-        poly.setAttribute("stroke", "black");
-        poly.setAttribute("stroke-width", "2");
-        ghost.appendChild(poly);
-    });
-    return ghost;
-}
-
-function renderTray() {
-    const tray = document.getElementById("trayPieces");
-    tray.innerHTML = "";
-    PIECE_NAMES.forEach((name, pieceIdx) => {
-        const ps = pieceStates[pieceIdx];
-        const placed = ps.placed;
-
-        const card = document.createElement("div");
-        card.className = "piece-card" + (placed ? " placed" : "");
-        card.title = placed ? `${name} (placed — click on board to remove)` : `${name} — drag onto board`;
-
-        card.appendChild(renderPieceSVG(pieceIdx, ps.rotIdx));
-
-        const lbl = document.createElement("div");
-        lbl.className = "piece-label";
-        lbl.textContent = name;
-        card.appendChild(lbl);
-
-        const rotRow = document.createElement("div");
-        rotRow.className = "piece-rot-btns";
-
-        const ccw = document.createElement("button");
-        ccw.className = "rot-btn";
-        ccw.textContent = "↺";
-        ccw.title = "Rotate counter-clockwise";
-        ccw.addEventListener("click", e => { e.stopPropagation(); rotatePiece(pieceIdx, -1); });
-
-        const cw = document.createElement("button");
-        cw.className = "rot-btn";
-        cw.textContent = "↻";
-        cw.title = "Rotate clockwise";
-        cw.addEventListener("click", e => { e.stopPropagation(); rotatePiece(pieceIdx, 1); });
-
-        rotRow.appendChild(ccw);
-        rotRow.appendChild(cw);
-        card.appendChild(rotRow);
-
-        if (!placed) {
-            card.addEventListener("mousedown", e => onDragStart(e, pieceIdx));
-            card.addEventListener("touchstart", e => onDragStart(e, pieceIdx), {passive: false});
-            card.addEventListener("wheel", e => {
-                e.preventDefault();
-                rotatePiece(pieceIdx, e.deltaY > 0 ? 1 : -1);
-            }, {passive: false});
+function renderFreePieces() {
+    const layer = document.getElementById("freeLayer");
+    layer.innerHTML = "";
+    let slotIdx = 0;
+    PIECE_NAMES.forEach((name, i) => {
+        const ps = pieceStates[i];
+        if (ps.placed) { slotIdx++; return; }
+        if (ps.x === undefined || ps.y === undefined) {
+            const col = slotIdx % LAYOUT.trayCols;
+            const row = Math.floor(slotIdx / LAYOUT.trayCols);
+            ps.x = LAYOUT.trayX0 + col * LAYOUT.slot + LAYOUT.slot / 2;
+            ps.y = LAYOUT.trayY0 + row * LAYOUT.slot + LAYOUT.slot / 2;
         }
-        tray.appendChild(card);
+        slotIdx++;
+        layer.appendChild(buildPieceGroup(i, ps.x, ps.y));
     });
 }
 
@@ -799,14 +765,17 @@ function rotatePiece(pieceIdx, dir) {
     const name = PIECE_NAMES[pieceIdx];
     const nRots = PIECE_ROTATIONS[name].length;
     ps.rotIdx = ((ps.rotIdx + dir) % nRots + nRots) % nRots;
-    renderTray();
+    renderFreePieces();
 }
 
 /* ═══════════════════════════════════════════════════════════
-   Drag & drop
+   Drag & drop — pieces move freely within the shared SVG
+   coordinate space; dropping on a valid board cell snaps the
+   piece in, dropping anywhere else in the box just leaves it
+   floating at that spot.
 ═══════════════════════════════════════════════════════════ */
 let dragPieceIdx = -1;
-let ghost = null;
+let dragStart = null;
 
 function getClientXY(e) {
     if (e.touches && e.touches.length) return [e.touches[0].clientX, e.touches[0].clientY];
@@ -814,93 +783,117 @@ function getClientXY(e) {
     return [e.clientX, e.clientY];
 }
 
-function onDragStart(e, pieceIdx) {
-    e.preventDefault();
-    dragPieceIdx = pieceIdx;
-    ghost = buildGhostSVG(pieceIdx, pieceStates[pieceIdx].rotIdx);
-    ghost.style.display = "block";
-    const [cx, cy] = getClientXY(e);
-    positionGhost(cx, cy);
-    document.addEventListener("mousemove", onDragMove);
-    document.addEventListener("touchmove", onDragMove, {passive: false});
-    document.addEventListener("mouseup", onDragEnd);
-    document.addEventListener("touchend", onDragEnd);
+function screenToLocal(cx, cy) {
+    const svg = document.getElementById("board");
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = cx; pt.y = cy;
+    return pt.matrixTransform(ctm.inverse());
 }
 
-function positionGhost(cx, cy) {
-    if (!ghost) return;
-    ghost.style.left = (cx - ghost.offsetX) + "px";
-    ghost.style.top  = (cy - ghost.offsetY) + "px";
-    const hit = getHoveredBoardCell(cx, cy);
+function onPieceDragStart(e, pieceIdx) {
+    e.preventDefault();
+    const [cx, cy] = getClientXY(e);
+    const loc = screenToLocal(cx, cy);
+    if (!loc) return;
+    dragPieceIdx = pieceIdx;
+    const ps = pieceStates[pieceIdx];
+    dragStart = { pointerX: loc.x, pointerY: loc.y, pieceX: ps.x, pieceY: ps.y };
+    document.addEventListener("mousemove", onPieceDragMove);
+    document.addEventListener("touchmove", onPieceDragMove, {passive: false});
+    document.addEventListener("mouseup", onPieceDragEnd);
+    document.addEventListener("touchend", onPieceDragEnd);
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function onPieceDragMove(e) {
+    if (dragPieceIdx < 0) return;
+    e.preventDefault();
+    const [cx, cy] = getClientXY(e);
+    const loc = screenToLocal(cx, cy);
+    if (!loc) return;
+    const dx = loc.x - dragStart.pointerX, dy = loc.y - dragStart.pointerY;
+    const ps = pieceStates[dragPieceIdx];
+    ps.x = clamp(dragStart.pieceX + dx, LAYOUT.viewX + 15, LAYOUT.viewX + LAYOUT.viewW - 15);
+    ps.y = clamp(dragStart.pieceY + dy, LAYOUT.viewY + 15, LAYOUT.viewY + LAYOUT.viewH - 15);
+    renderFreePieces();
+
+    const hit = getHoveredBoardCell(dragPieceIdx);
     document.getElementById("board").setAttribute("class", hit ? (hit.valid ? "drop-valid" : "drop-invalid") : "");
 }
 
-function onDragMove(e) {
-    e.preventDefault();
-    const [cx, cy] = getClientXY(e);
-    positionGhost(cx, cy);
-}
-
-function onDragEnd(e) {
-    document.removeEventListener("mousemove", onDragMove);
-    document.removeEventListener("touchmove", onDragMove);
-    document.removeEventListener("mouseup", onDragEnd);
-    document.removeEventListener("touchend", onDragEnd);
+function onPieceDragEnd(e) {
+    document.removeEventListener("mousemove", onPieceDragMove);
+    document.removeEventListener("touchmove", onPieceDragMove);
+    document.removeEventListener("mouseup", onPieceDragEnd);
+    document.removeEventListener("touchend", onPieceDragEnd);
     document.getElementById("board").setAttribute("class", "");
 
-    if (!ghost || dragPieceIdx < 0) { cleanup(); return; }
-
-    const [cx, cy] = getClientXY(e);
-    const hit = getHoveredBoardCell(cx, cy);
+    if (dragPieceIdx < 0) return;
+    const pieceIdx = dragPieceIdx;
+    const ps = pieceStates[pieceIdx];
+    const cells = getPieceCells(pieceIdx, ps.rotIdx);
+    const hit = getHoveredBoardCell(pieceIdx);
 
     if (hit && hit.valid) {
-        const cells = getPieceCells(dragPieceIdx, pieceStates[dragPieceIdx].rotIdx);
-        if (tryPlacePiece(dragPieceIdx, cells, hit.anchorRow, hit.anchorCol)) {
+        if (tryPlacePiece(pieceIdx, cells, hit.anchorRow, hit.anchorCol)) {
             redrawBoard();
-            renderTray();
+            renderFreePieces();
             if (checkWin()) {
                 setStatus("🎉 Puzzle solved! Well done!", "solved");
             } else {
                 const rem = pieceStates.filter(p => !p.placed).length;
-                setStatus(`"${PIECE_NAMES[dragPieceIdx]}" placed · ${rem} piece${rem !== 1 ? "s" : ""} remaining`);
+                setStatus(`"${PIECE_NAMES[pieceIdx]}" placed · ${rem} piece${rem !== 1 ? "s" : ""} remaining`);
             }
-        } else {
-            setStatus("Can't place there — try rotating or a different spot", "error");
         }
-    } else if (hit) {
-        setStatus("Can't place there — cell is occupied or out of bounds");
+    } else {
+        // Left as a loose piece wherever it was dropped in the box.
+        renderFreePieces();
     }
-    cleanup();
-}
-
-function cleanup() {
-    if (ghost) { ghost.style.display = "none"; ghost.innerHTML = ""; }
     dragPieceIdx = -1;
+    dragStart = null;
 }
 
 /* ─────────────────────────────────────────────────────────
-   getHoveredBoardCell: convert screen coords → board [row,col]
-   
+   getHoveredBoardCell: figure out which board [row,col] a
+   dragged piece's anchor cell (cells[0]) is currently sitting
+   over, based on where the piece is actually rendered
+   (pieceStates[i].x/y), not the raw cursor position — the two
+   can differ since the piece is dragged from wherever it was
+   grabbed, not necessarily its bounding-box center.
+
    boardToPixel(row, col) gives:
      x = 1.5 * R * row      →  row = x / (1.5 * R)
      y = √3 * R * (col - row/2)  →  col = y / (√3 * R) + row/2
 
    So to invert: compute rowF first from x, then colF from y+rowF.
 ───────────────────────────────────────────────────────── */
-function getHoveredBoardCell(cx, cy) {
-    const boardSVG = document.getElementById("board");
-    const ctm = boardSVG.getScreenCTM();
-    if (!ctm) return null;
+function getHoveredBoardCell(pieceIdx) {
+    const ps = pieceStates[pieceIdx];
+    const b = pieceLocalBounds(pieceIdx, ps.rotIdx);
+    const cells = b.cells;
 
-    // Convert screen pixels → SVG coordinate space
-    const pt = boardSVG.createSVGPoint();
-    pt.x = cx;
-    pt.y = cy;
-    const local = pt.matrixTransform(ctm.inverse());
+    // World position of the piece's anchor cell (cells[0]), matching
+    // how buildPieceGroup positions the group: translate(ps.x - b.cx, ps.y - b.cy)
+    const originX = ps.x - b.cx;
+    const originY = ps.y - b.cy;
+    const anchorX = originX + b.pts[0][0];
+    const anchorY = originY + b.pts[0][1];
+
+    // Quick reject: only consider board-snap if within the board's
+    // pixel bounding box (plus a small margin) — otherwise this is
+    // a free drop in the open tray area.
+    const m = HEX_RADIUS;
+    if (anchorX < LAYOUT.boardMinX - m || anchorX > LAYOUT.boardMaxX + m ||
+        anchorY < LAYOUT.boardMinY - m || anchorY > LAYOUT.boardMaxY + m) {
+        return null;
+    }
 
     // Invert boardToPixel: x=1.5*R*row → row; y=√3*R*(col-row/2) → col
-    const rowF = local.x / (1.5 * HEX_RADIUS);
-    const colF = local.y / (Math.sqrt(3) * HEX_RADIUS) + rowF / 2;
+    const rowF = anchorX / (1.5 * HEX_RADIUS);
+    const colF = anchorY / (Math.sqrt(3) * HEX_RADIUS) + rowF / 2;
 
     // Search a neighbourhood of candidate cells (axial rounding can be ambiguous at corners)
     const candidates = [];
@@ -908,17 +901,15 @@ function getHoveredBoardCell(cx, cy) {
         for (let dc = -1; dc <= 1; dc++)
             candidates.push([Math.round(rowF) + dr, Math.round(colF) + dc]);
 
-    const cells = ghost ? ghost.cells : [];
-
-    // Pick the candidate whose centre is closest to the cursor
+    // Pick the candidate whose centre is closest to the anchor point
     let best = null, bestDist = Infinity;
     for (const [row, col] of candidates) {
-        const [cx2, cy2] = boardToPixel(row, col);          // ← row first, col second
-        const dist = Math.hypot(local.x - cx2, local.y - cy2);
+        const [cx2, cy2] = boardToPixel(row, col);
+        const dist = Math.hypot(anchorX - cx2, anchorY - cy2);
         if (dist < bestDist) { bestDist = dist; best = [row, col]; }
     }
 
-    // Reject if cursor is clearly between cells (more than one hex-radius away)
+    // Reject if the anchor is clearly between cells (more than one hex-radius away)
     if (!best || bestDist > HEX_RADIUS * 1.5) return null;
 
     const [row, col] = best;
@@ -954,6 +945,7 @@ const solveBtn   = document.getElementById("solveButton");
 const spinner2   = document.getElementById("spinner");
 const solveIcon  = document.getElementById("solveIcon");
 const legendEl   = document.getElementById("legend");
+const puzzleBox  = document.getElementById("puzzleBox");
 
 (function buildDays() {
     for (let d = 1; d <= 31; d++) {
@@ -973,12 +965,14 @@ applyToday();
 
 function setStatus(msg, cls = "") { outputEl.textContent = msg; outputEl.className = cls; }
 
+initSVG();
+
 function drawInitial() {
     legendEl.innerHTML = "";
-    document.getElementById("trayWrap").style.opacity = "1";
+    puzzleBox.style.opacity = "1";
     initManualState();
     redrawBoard();
-    renderTray();
+    renderFreePieces();
     setStatus(`${selWeekday.value} · ${selMonth.value} ${selDay.value} — drag pieces onto the board`);
 }
 
@@ -1006,7 +1000,8 @@ solveBtn.addEventListener("click", () => {
 
         if (!result.solved) { setStatus(`No solution found for ${w} · ${m} ${d}`, "error"); return; }
 
-        document.getElementById("trayWrap").style.opacity = "0.4";
+        isAutoSolved = true;
+        document.getElementById("freeLayer").innerHTML = "";
         drawBoard(result.solution);
         setStatus(`✓ Solved! — ${w} · ${m} ${d}`, "solved");
         buildLegend();
