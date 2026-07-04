@@ -133,6 +133,44 @@
 
     .btn-symbol { font-size: 20px; }
 
+    .scramble-group {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      height: 38px;
+    }
+    .scramble-opt {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      background: var(--surface2);
+      border: none;
+      border-right: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--ui);
+      cursor: pointer;
+      padding: 4px 10px;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .scramble-opt:last-child { border-right: none; }
+    .scramble-opt:hover { background: #252f47; }
+    .scramble-opt:active { transform: scale(0.97); }
+    .scramble-opt:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .scramble-opt .so-title {
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .scramble-opt .so-sub {
+      font-size: 9px;
+      color: var(--text-muted);
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner {
       display: none;
@@ -213,6 +251,9 @@
     .drop-valid   { filter: drop-shadow(0 0 6px rgba(76,175,80,0.9)); }
     .drop-invalid { filter: drop-shadow(0 0 6px rgba(224,85,85,0.9)); }
 
+    .locked-cell { cursor: not-allowed !important; }
+    .locked-label { pointer-events: none; }
+
     .legend {
       margin-top: 16px;
       display: flex;
@@ -273,8 +314,21 @@
     </select>
   </div>
   <div class="cg">
-    <label for="selScrambleN">Scramble N</label>
-    <select id="selScrambleN"></select>
+    <label>Scramble</label>
+    <div class="scramble-group" id="scrambleGroup">
+      <button type="button" class="scramble-opt" id="scrambleEasy" data-n="9">
+        <span class="so-title">Easy</span>
+        <span class="so-sub">4 to place</span>
+      </button>
+      <button type="button" class="scramble-opt" id="scrambleMedium" data-n="6">
+        <span class="so-title">Medium</span>
+        <span class="so-sub">7 to place</span>
+      </button>
+      <button type="button" class="scramble-opt" id="scrambleHard" data-n="3">
+        <span class="so-title">Hard</span>
+        <span class="so-sub">10 to place</span>
+      </button>
+    </div>
   </div>
   <div class="cg" style="flex-direction:row;gap:7px;align-items:flex-end;">
     <button class="btn" id="todayBtn">
@@ -291,11 +345,6 @@
       <svg id="hintIcon" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.05V17h6v-.25c0-.85.4-1.55 1-2.05A7 7 0 0 0 12 2z"/></svg>
       Hint
     </button>
-    <button class="btn" id="scrambleBtn">
-      <span class="spinner" id="scrambleSpinner"></span>
-      <svg id="scrambleIcon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.25" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.25" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.25" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.25" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none"/></svg>
-      Scramble
-    </button>
     <button class="btn" id="resetBtn">
       <span class="btn-symbol">⟲</span>Reset
     </button>
@@ -306,7 +355,7 @@
 
 <div class="puzzle-header">
   <span class="puzzle-title">Board &amp; pieces</span>
-  <span class="puzzle-hint">Drag pieces anywhere in the box · scroll or tap ↻ ↺ to rotate · drag a placed piece to move or remove it</span>
+  <span class="puzzle-hint">Drag pieces anywhere in the box · scroll or tap ↻ ↺ to rotate · drag a placed piece to move or remove it · 🔒 locked pieces need a Reset first</span>
 </div>
 
 <div class="puzzle-box" id="puzzleBox">
@@ -587,6 +636,25 @@ function initSVG() {
     const svg = document.getElementById("board");
     svg.innerHTML = "";
     svg.setAttribute("viewBox", `${LAYOUT.viewX} ${LAYOUT.viewY} ${LAYOUT.viewW} ${LAYOUT.viewH}`);
+
+    // Diagonal-hatch pattern overlaid on locked (scrambled) pieces so they
+    // read as "not draggable" at a glance, independent of piece color.
+    const defs = makeSVG("defs");
+    const pattern = makeSVG("pattern");
+    pattern.setAttribute("id", "lockHatch");
+    pattern.setAttribute("width", "7");
+    pattern.setAttribute("height", "7");
+    pattern.setAttribute("patternUnits", "userSpaceOnUse");
+    pattern.setAttribute("patternTransform", "rotate(45)");
+    const hatchLine = makeSVG("line");
+    hatchLine.setAttribute("x1", "0"); hatchLine.setAttribute("y1", "0");
+    hatchLine.setAttribute("x2", "0"); hatchLine.setAttribute("y2", "7");
+    hatchLine.setAttribute("stroke", "rgba(13,17,23,0.6)");
+    hatchLine.setAttribute("stroke-width", "3.5");
+    pattern.appendChild(hatchLine);
+    defs.appendChild(pattern);
+    svg.appendChild(defs);
+
     const boardLayer = makeSVG("g");
     boardLayer.id = "boardLayer";
     svg.appendChild(boardLayer);
@@ -598,6 +666,7 @@ function initSVG() {
 function drawBoard(board) {
     const layer = document.getElementById("boardLayer");
     layer.innerHTML = "";
+    const lockedCentroids = {}; // colorIdx -> {sx, sy, n}
 
     for (let row = 0; row < board.length; row++) {
         for (let col = 0; col < board[row].length; col++) {
@@ -606,6 +675,7 @@ function drawBoard(board) {
 
             const [rawX, rawY] = boardToPixel(row, col);
             const x = rawX + BOARD_ORIGIN.x, y = rawY + BOARD_ORIGIN.y;
+            const isLocked = cell > 0 && pieceStates[cell - 1] && pieceStates[cell - 1].locked;
 
             const poly = makeSVG("polygon");
             poly.setAttribute("points", hexPoints(x, y));
@@ -613,13 +683,33 @@ function drawBoard(board) {
             poly.setAttribute("stroke", "black");
             poly.setAttribute("stroke-width", "2");
             if (cell > 0) {
-                poly.style.cursor = "grab";
-                poly.dataset.row = row;
-                poly.dataset.col = col;
-                poly.addEventListener("pointerdown", onBoardPieceDragStart, {passive: false});
-                poly.addEventListener("touchstart", blockNativeTouchScroll, {passive: false});
+                if (isLocked) {
+                    // Locked pieces (placed by Scramble) can't be picked up —
+                    // no drag listeners — and are visually flagged with a
+                    // dashed outline plus a hatch overlay below.
+                    poly.setAttribute("class", "locked-cell");
+                    poly.setAttribute("stroke-dasharray", "3,2.5");
+                } else {
+                    poly.style.cursor = "grab";
+                    poly.dataset.row = row;
+                    poly.dataset.col = col;
+                    poly.addEventListener("pointerdown", onBoardPieceDragStart, {passive: false});
+                    poly.addEventListener("touchstart", blockNativeTouchScroll, {passive: false});
+                }
             }
             layer.appendChild(poly);
+
+            if (isLocked) {
+                const hatch = makeSVG("polygon");
+                hatch.setAttribute("points", hexPoints(x, y));
+                hatch.setAttribute("fill", "url(#lockHatch)");
+                hatch.setAttribute("stroke", "none");
+                hatch.setAttribute("class", "locked-label");
+                layer.appendChild(hatch);
+
+                const acc = (lockedCentroids[cell] = lockedCentroids[cell] || { sx: 0, sy: 0, n: 0 });
+                acc.sx += x; acc.sy += y; acc.n++;
+            }
 
             const text = makeSVG("text");
             text.setAttribute("x", x);
@@ -632,15 +722,42 @@ function drawBoard(board) {
             text.setAttribute("fill", cell === -2 ? "white" : "black");
             text.textContent = BOARD[row][col];
             if (cell > 0) {
-                text.style.cursor = "grab";
-                text.dataset.row = row;
-                text.dataset.col = col;
-                text.addEventListener("pointerdown", onBoardPieceDragStart, {passive: false});
-                text.addEventListener("touchstart", blockNativeTouchScroll, {passive: false});
+                if (isLocked) {
+                    text.setAttribute("class", "locked-label");
+                } else {
+                    text.style.cursor = "grab";
+                    text.dataset.row = row;
+                    text.dataset.col = col;
+                    text.addEventListener("pointerdown", onBoardPieceDragStart, {passive: false});
+                    text.addEventListener("touchstart", blockNativeTouchScroll, {passive: false});
+                }
             }
             layer.appendChild(text);
         }
     }
+
+    // One small lock badge per locked piece, centered over all of its cells.
+    Object.values(lockedCentroids).forEach(({ sx, sy, n }) => {
+        const cx = sx / n, cy = sy / n;
+        const badge = makeSVG("g");
+        badge.setAttribute("class", "locked-label");
+        const bg = makeSVG("circle");
+        bg.setAttribute("cx", cx); bg.setAttribute("cy", cy);
+        bg.setAttribute("r", String(HEX_RADIUS * 0.4));
+        bg.setAttribute("fill", "rgba(13,17,23,0.8)");
+        bg.setAttribute("stroke", "white");
+        bg.setAttribute("stroke-width", "1");
+        badge.appendChild(bg);
+        const glyph = makeSVG("text");
+        glyph.setAttribute("x", cx); glyph.setAttribute("y", cy);
+        glyph.setAttribute("text-anchor", "middle");
+        glyph.setAttribute("dominant-baseline", "middle");
+        glyph.setAttribute("dy", "0.05em");
+        glyph.setAttribute("font-size", String(HEX_RADIUS * 0.5));
+        glyph.textContent = "🔒";
+        badge.appendChild(glyph);
+        layer.appendChild(badge);
+    });
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -668,6 +785,7 @@ function initManualState(hardReset = false) {
     pieceStates = PIECE_NAMES.map((_, i) => ({
         rotIdx: (!hardReset && pieceStates[i]) ? pieceStates[i].rotIdx : 0,
         placed: false,
+        locked: false,
         x: (!hardReset && pieceStates[i]) ? pieceStates[i].x : undefined,
         y: (!hardReset && pieceStates[i]) ? pieceStates[i].y : undefined
     }));
@@ -1171,10 +1289,7 @@ const solveIcon  = document.getElementById("solveIcon");
 const hintBtn    = document.getElementById("hintButton");
 const hintSpinner= document.getElementById("hintSpinner");
 const hintIcon   = document.getElementById("hintIcon");
-const selScrambleN     = document.getElementById("selScrambleN");
-const scrambleBtn      = document.getElementById("scrambleBtn");
-const scrambleSpinner  = document.getElementById("scrambleSpinner");
-const scrambleIcon     = document.getElementById("scrambleIcon");
+const scrambleOptBtns = Array.from(document.querySelectorAll(".scramble-opt"));
 const legendEl   = document.getElementById("legend");
 const puzzleBox  = document.getElementById("puzzleBox");
 
@@ -1184,16 +1299,6 @@ const puzzleBox  = document.getElementById("puzzleBox");
         opt.value = opt.textContent = String(d);
         selDay.appendChild(opt);
     }
-})();
-
-(function buildScrambleOptions() {
-    const total = PIECE_NAMES.length;
-    for (let n = 1; n <= total; n++) {
-        const opt = document.createElement("option");
-        opt.value = opt.textContent = String(n);
-        selScrambleN.appendChild(opt);
-    }
-    selScrambleN.value = String(Math.min(4, total));
 })();
 
 function applyToday() {
@@ -1273,7 +1378,7 @@ solveBtn.addEventListener("click", () => {
     const hasFixedPieces = pieceStates.some(ps => ps.placed);
     solveBtn.disabled = true;
     hintBtn.disabled = true;
-    scrambleBtn.disabled = true;
+    scrambleOptBtns.forEach(b => b.disabled = true);
     spinner2.style.display = "block";
     solveIcon.style.display = "none";
     setStatus(`Solving for ${w} · ${m} ${d}...`, "loading");
@@ -1286,7 +1391,7 @@ solveBtn.addEventListener("click", () => {
         const result = solveCalendar(m, d, w, fixedState);
         solveBtn.disabled = false;
         hintBtn.disabled = false;
-        scrambleBtn.disabled = false;
+        scrambleOptBtns.forEach(b => b.disabled = false);
         spinner2.style.display = "none";
         solveIcon.style.display = "block";
 
@@ -1314,7 +1419,7 @@ hintBtn.addEventListener("click", () => {
     const m = selMonth.value, d = selDay.value, w = selWeekday.value;
     hintBtn.disabled = true;
     solveBtn.disabled = true;
-    scrambleBtn.disabled = true;
+    scrambleOptBtns.forEach(b => b.disabled = true);
     hintSpinner.style.display = "block";
     hintIcon.style.display = "none";
     setStatus(`Thinking of a hint for ${w} · ${m} ${d}...`, "loading");
@@ -1327,7 +1432,7 @@ hintBtn.addEventListener("click", () => {
         const result = solveCalendar(m, d, w, fixedState);
         hintBtn.disabled = false;
         solveBtn.disabled = false;
-        scrambleBtn.disabled = false;
+        scrambleOptBtns.forEach(b => b.disabled = false);
         hintSpinner.style.display = "none";
         hintIcon.style.display = "block";
 
@@ -1381,14 +1486,11 @@ hintBtn.addEventListener("click", () => {
     }, 30));
 });
 
-scrambleBtn.addEventListener("click", () => {
+function runScramble(n) {
     const m = selMonth.value, d = selDay.value, w = selWeekday.value;
-    const n = parseInt(selScrambleN.value, 10);
-    scrambleBtn.disabled = true;
+    scrambleOptBtns.forEach(b => b.disabled = true);
     solveBtn.disabled = true;
     hintBtn.disabled = true;
-    scrambleSpinner.style.display = "block";
-    scrambleIcon.style.display = "none";
     setStatus(`Scrambling ${n} piece${n !== 1 ? "s" : ""} for ${w} · ${m} ${d}...`, "loading");
     legendEl.innerHTML = "";
 
@@ -1401,11 +1503,9 @@ scrambleBtn.addEventListener("click", () => {
         // scramble we build from is always solvable.
         const result = solveCalendar(m, d, w, null);
 
-        scrambleBtn.disabled = false;
+        scrambleOptBtns.forEach(b => b.disabled = false);
         solveBtn.disabled = false;
         hintBtn.disabled = false;
-        scrambleSpinner.style.display = "none";
-        scrambleIcon.style.display = "block";
 
         if (!result.solved) {
             redrawBoard();
@@ -1426,7 +1526,8 @@ scrambleBtn.addEventListener("click", () => {
         }
 
         // Randomly choose n of the solved pieces (Fisher-Yates shuffle, then
-        // take the first n) and place just those on the board.
+        // take the first n) and place just those on the board, locked so
+        // they can't be picked back up until Reset is pressed.
         const allIdx = Object.keys(cellsByColor).map(k => parseInt(k, 10) - 1);
         for (let i = allIdx.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -1441,12 +1542,17 @@ scrambleBtn.addEventListener("click", () => {
             const ps = pieceStates[pieceIdx];
             ps.rotIdx = found.rotIdx;
             tryPlacePiece(pieceIdx, getPieceCells(pieceIdx, found.rotIdx), found.anchorRow, found.anchorCol);
+            ps.locked = true;
         });
 
         redrawBoard();
         renderFreePieces();
-        setStatus(`🎲 Scrambled ${chosen.length} piece${chosen.length !== 1 ? "s" : ""} onto the board for ${w} · ${m} ${d} — solve the rest!`);
+        setStatus(`🎲 Scrambled ${chosen.length} piece${chosen.length !== 1 ? "s" : ""} onto the board for ${w} · ${m} ${d} — 🔒 locked until Reset. Solve the rest!`);
     }, 30));
+}
+
+scrambleOptBtns.forEach(btn => {
+    btn.addEventListener("click", () => runScramble(parseInt(btn.dataset.n, 10)));
 });
 
 function buildLegend() {
