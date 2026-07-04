@@ -664,8 +664,9 @@ function removePieceFromBoard(pieceIdx) {
 // normal free-drag flow, so it can be dropped on a new cell or out in the
 // open box.
 function onBoardPieceDragStart(e) {
-    if (dragPieceIdx >= 0) return; // a drag is already in progress on another finger
     e.preventDefault();
+    e.stopPropagation(); // never let a piece touch fall through to board pan/zoom
+    if (dragPieceIdx >= 0) return; // a drag is already in progress on another finger
     const r = parseInt(e.target.dataset.row);
     const c = parseInt(e.target.dataset.col);
     if (isNaN(r) || isNaN(c)) return;
@@ -836,7 +837,7 @@ let activePointerId = null;
 // competing with a single-finger drag; all the actual drag logic lives in
 // the Pointer Event handlers below.
 function blockNativeTouchScroll(e) { e.preventDefault(); }
-document.addEventListener("touchmove", e => { if (dragPieceIdx >= 0) e.preventDefault(); }, {passive: false});
+document.addEventListener("touchmove", e => { if (dragPieceIdx >= 0 || boardPointers.size > 0) e.preventDefault(); }, {passive: false});
 
 function getClientXY(e) {
     if (e.touches && e.touches.length) return [e.touches[0].clientX, e.touches[0].clientY];
@@ -854,8 +855,9 @@ function screenToLocal(cx, cy) {
 }
 
 function onPieceDragStart(e, pieceIdx) {
-    if (dragPieceIdx >= 0) return; // a drag is already in progress on another finger
     e.preventDefault();
+    e.stopPropagation(); // never let a piece touch fall through to board pan/zoom
+    if (dragPieceIdx >= 0) return; // a drag is already in progress on another finger
     const [cx, cy] = getClientXY(e);
     beginDrag(pieceIdx, cx, cy, e.pointerId, e.target);
 }
@@ -929,6 +931,119 @@ function onPieceDragEnd(e) {
     dragPieceIdx = -1;
     dragStart = null;
 }
+
+/* ─────────────────────────────────────────────────────────
+   Board pan & pinch-zoom (touch only — mouse users don't
+   need it, and it must never fire for a touch already
+   claimed by a piece drag; those call stopPropagation()).
+
+   One finger on empty space pans; two fingers pinch-zoom
+   (and dragging the pinch midpoint pans at the same time,
+   like any normal map/photo gesture). Everything is driven
+   by directly rewriting the SVG's viewBox — piece dragging
+   keeps working unchanged since it goes through the live
+   screen-to-SVG CTM, which already reflects the current
+   pan/zoom.
+───────────────────────────────────────────────────────── */
+const boardEl = document.getElementById("board");
+const boardPointers = new Map(); // pointerId -> {x, y} in screen coords
+let boardGesture = null;         // reference snapshot captured at gesture (re)start
+
+const MIN_VIEW_W = LAYOUT.viewW / 4; // up to 4x zoom in
+const MAX_VIEW_W = LAYOUT.viewW;     // never zoom out past the full board
+
+function getViewBox() {
+    const vb = boardEl.viewBox.baseVal;
+    return { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
+}
+
+function setViewBox(vb) {
+    boardEl.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+}
+
+function clampViewBox(vb) {
+    const w = clamp(vb.w, MIN_VIEW_W, MAX_VIEW_W);
+    const h = w * (LAYOUT.viewH / LAYOUT.viewW);
+    const x = clamp(vb.x, LAYOUT.viewX, LAYOUT.viewX + LAYOUT.viewW - w);
+    const y = clamp(vb.y, LAYOUT.viewY, LAYOUT.viewY + LAYOUT.viewH - h);
+    return { x, y, w, h };
+}
+
+function boardMidAndDist(pts) {
+    if (pts.length < 2) return { mid: pts[0], dist: 0 };
+    const [a, b] = pts;
+    return { mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, dist: Math.hypot(a.x - b.x, a.y - b.y) };
+}
+
+// Capture a fresh reference snapshot for the current set of pointers. Called
+// whenever a finger goes down or up, so the gesture never jumps — it just
+// continues smoothly from wherever the view currently is.
+function startBoardGesture() {
+    const pts = Array.from(boardPointers.values());
+    if (pts.length === 0) { boardGesture = null; return; }
+    const rect = boardEl.getBoundingClientRect();
+    const { mid, dist } = boardMidAndDist(pts);
+    const vb = getViewBox();
+    const fracX = (mid.x - rect.left) / rect.width;
+    const fracY = (mid.y - rect.top) / rect.height;
+    boardGesture = {
+        rect,
+        startViewBox: vb,
+        startDist: dist,
+        startMidLocal: { x: vb.x + fracX * vb.w, y: vb.y + fracY * vb.h }
+    };
+}
+
+function updateBoardGesture() {
+    if (!boardGesture) return;
+    const pts = Array.from(boardPointers.values());
+    if (pts.length === 0) return;
+    const { rect, startViewBox, startDist, startMidLocal } = boardGesture;
+    const { mid, dist } = boardMidAndDist(pts);
+
+    let newW = startViewBox.w;
+    if (pts.length >= 2 && startDist > 0) {
+        newW = startViewBox.w / (dist / startDist);
+    }
+    newW = clamp(newW, MIN_VIEW_W, MAX_VIEW_W);
+    const newH = newW * (startViewBox.h / startViewBox.w);
+
+    const fracX = (mid.x - rect.left) / rect.width;
+    const fracY = (mid.y - rect.top) / rect.height;
+
+    setViewBox(clampViewBox({
+        x: startMidLocal.x - fracX * newW,
+        y: startMidLocal.y - fracY * newH,
+        w: newW,
+        h: newH
+    }));
+}
+
+boardEl.addEventListener("pointerdown", e => {
+    if (e.pointerType !== "touch") return; // mouse users keep the existing drag-only behavior
+    boardPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    startBoardGesture();
+});
+
+boardEl.addEventListener("pointermove", e => {
+    if (!boardPointers.has(e.pointerId)) return;
+    e.preventDefault();
+    boardPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    updateBoardGesture();
+}, { passive: false });
+
+function releaseBoardPointer(e) {
+    if (!boardPointers.has(e.pointerId)) return;
+    boardPointers.delete(e.pointerId);
+    startBoardGesture(); // re-anchor to whatever finger(s) remain, no jump
+}
+boardEl.addEventListener("pointerup", releaseBoardPointer);
+boardEl.addEventListener("pointercancel", releaseBoardPointer);
+
+// Real touchstart/touchmove preventDefault, for the same reason as
+// blockNativeTouchScroll above: Pointer Events' preventDefault() alone
+// doesn't stop native scrolling/pinch-zoom on the page.
+boardEl.addEventListener("touchstart", blockNativeTouchScroll, { passive: false });
 
 /* ─────────────────────────────────────────────────────────
    getHoveredBoardCell: figure out which board [row,col] a
