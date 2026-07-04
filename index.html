@@ -272,6 +272,10 @@
       <option>Wed</option><option>Thu</option><option>Fri</option><option>Sat</option>
     </select>
   </div>
+  <div class="cg">
+    <label for="selScrambleN">Scramble N</label>
+    <select id="selScrambleN"></select>
+  </div>
   <div class="cg" style="flex-direction:row;gap:7px;align-items:flex-end;">
     <button class="btn" id="todayBtn">
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
@@ -286,6 +290,11 @@
       <span class="spinner" id="hintSpinner"></span>
       <svg id="hintIcon" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.05V17h6v-.25c0-.85.4-1.55 1-2.05A7 7 0 0 0 12 2z"/></svg>
       Hint
+    </button>
+    <button class="btn" id="scrambleBtn">
+      <span class="spinner" id="scrambleSpinner"></span>
+      <svg id="scrambleIcon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.25" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.25" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.25" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.25" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none"/></svg>
+      Scramble
     </button>
     <button class="btn" id="resetBtn">
       <span class="btn-symbol">⟲</span>Reset
@@ -1162,6 +1171,10 @@ const solveIcon  = document.getElementById("solveIcon");
 const hintBtn    = document.getElementById("hintButton");
 const hintSpinner= document.getElementById("hintSpinner");
 const hintIcon   = document.getElementById("hintIcon");
+const selScrambleN     = document.getElementById("selScrambleN");
+const scrambleBtn      = document.getElementById("scrambleBtn");
+const scrambleSpinner  = document.getElementById("scrambleSpinner");
+const scrambleIcon     = document.getElementById("scrambleIcon");
 const legendEl   = document.getElementById("legend");
 const puzzleBox  = document.getElementById("puzzleBox");
 
@@ -1171,6 +1184,16 @@ const puzzleBox  = document.getElementById("puzzleBox");
         opt.value = opt.textContent = String(d);
         selDay.appendChild(opt);
     }
+})();
+
+(function buildScrambleOptions() {
+    const total = PIECE_NAMES.length;
+    for (let n = 1; n <= total; n++) {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = String(n);
+        selScrambleN.appendChild(opt);
+    }
+    selScrambleN.value = String(Math.min(4, total));
 })();
 
 function applyToday() {
@@ -1250,6 +1273,7 @@ solveBtn.addEventListener("click", () => {
     const hasFixedPieces = pieceStates.some(ps => ps.placed);
     solveBtn.disabled = true;
     hintBtn.disabled = true;
+    scrambleBtn.disabled = true;
     spinner2.style.display = "block";
     solveIcon.style.display = "none";
     setStatus(`Solving for ${w} · ${m} ${d}...`, "loading");
@@ -1262,6 +1286,7 @@ solveBtn.addEventListener("click", () => {
         const result = solveCalendar(m, d, w, fixedState);
         solveBtn.disabled = false;
         hintBtn.disabled = false;
+        scrambleBtn.disabled = false;
         spinner2.style.display = "none";
         solveIcon.style.display = "block";
 
@@ -1289,6 +1314,7 @@ hintBtn.addEventListener("click", () => {
     const m = selMonth.value, d = selDay.value, w = selWeekday.value;
     hintBtn.disabled = true;
     solveBtn.disabled = true;
+    scrambleBtn.disabled = true;
     hintSpinner.style.display = "block";
     hintIcon.style.display = "none";
     setStatus(`Thinking of a hint for ${w} · ${m} ${d}...`, "loading");
@@ -1301,6 +1327,7 @@ hintBtn.addEventListener("click", () => {
         const result = solveCalendar(m, d, w, fixedState);
         hintBtn.disabled = false;
         solveBtn.disabled = false;
+        scrambleBtn.disabled = false;
         hintSpinner.style.display = "none";
         hintIcon.style.display = "block";
 
@@ -1351,6 +1378,74 @@ hintBtn.addEventListener("click", () => {
             const rem = pieceStates.filter(p => !p.placed).length;
             setStatus(`💡 Hint: placed "${PIECE_NAMES[targetIdx]}" · ${rem} piece${rem !== 1 ? "s" : ""} remaining`);
         }
+    }, 30));
+});
+
+scrambleBtn.addEventListener("click", () => {
+    const m = selMonth.value, d = selDay.value, w = selWeekday.value;
+    const n = parseInt(selScrambleN.value, 10);
+    scrambleBtn.disabled = true;
+    solveBtn.disabled = true;
+    hintBtn.disabled = true;
+    scrambleSpinner.style.display = "block";
+    scrambleIcon.style.display = "none";
+    setStatus(`Scrambling ${n} piece${n !== 1 ? "s" : ""} for ${w} · ${m} ${d}...`, "loading");
+    legendEl.innerHTML = "";
+
+    requestAnimationFrame(() => setTimeout(() => {
+        // Start from a completely empty board — a scramble replaces whatever
+        // was there before, it doesn't build on it.
+        initManualState(true);
+
+        // Solve for a full, fresh solution (no fixed pieces) to guarantee the
+        // scramble we build from is always solvable.
+        const result = solveCalendar(m, d, w, null);
+
+        scrambleBtn.disabled = false;
+        solveBtn.disabled = false;
+        hintBtn.disabled = false;
+        scrambleSpinner.style.display = "none";
+        scrambleIcon.style.display = "block";
+
+        if (!result.solved) {
+            redrawBoard();
+            renderFreePieces();
+            setStatus(`No solution found for ${w} · ${m} ${d} — can't scramble`, "error");
+            return;
+        }
+
+        // Group the solved board's cells by piece color. Every piece's cell
+        // counts sum exactly to the number of free board cells, so a full
+        // solution always uses all of them.
+        const cellsByColor = {};
+        for (let r = 0; r < result.solution.length; r++) {
+            for (let c = 0; c < result.solution[r].length; c++) {
+                const v = result.solution[r][c];
+                if (v > 0) (cellsByColor[v] = cellsByColor[v] || []).push([r, c]);
+            }
+        }
+
+        // Randomly choose n of the solved pieces (Fisher-Yates shuffle, then
+        // take the first n) and place just those on the board.
+        const allIdx = Object.keys(cellsByColor).map(k => parseInt(k, 10) - 1);
+        for (let i = allIdx.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [allIdx[i], allIdx[j]] = [allIdx[j], allIdx[i]];
+        }
+        const chosen = allIdx.slice(0, Math.min(n, allIdx.length));
+
+        chosen.forEach(pieceIdx => {
+            const cells = cellsByColor[pieceIdx + 1];
+            const found = deriveRotAndAnchor(pieceIdx, cells);
+            if (!found) return; // shouldn't happen if the solver's output is well-formed
+            const ps = pieceStates[pieceIdx];
+            ps.rotIdx = found.rotIdx;
+            tryPlacePiece(pieceIdx, getPieceCells(pieceIdx, found.rotIdx), found.anchorRow, found.anchorCol);
+        });
+
+        redrawBoard();
+        renderFreePieces();
+        setStatus(`🎲 Scrambled ${chosen.length} piece${chosen.length !== 1 ? "s" : ""} onto the board for ${w} · ${m} ${d} — solve the rest!`);
     }, 30));
 });
 
