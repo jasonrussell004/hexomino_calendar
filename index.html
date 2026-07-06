@@ -166,6 +166,15 @@
     }
     .btn.primary:hover { background: #3a2800; }
 
+    .btn.btn-cancel {
+      background: #3a1414;
+      border-color: var(--danger);
+      color: #ffb3b3;
+      font-weight: 600;
+    }
+    .btn.btn-cancel:hover { background: #4a1a1a; }
+    .btn.btn-cancel:disabled { opacity: 0.6; }
+
     .btn svg {
       width: 15px; height: 15px;
       stroke: currentColor; fill: none;
@@ -543,7 +552,7 @@
         <button class="btn primary" id="solveButton">
           <span class="spinner" id="spinner"></span>
           <svg id="solveIcon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          Solve
+          <span id="solveLabel">Solve</span>
         </button>
         <button class="btn" id="hintButton">
           <span class="spinner" id="hintSpinner"></span>
@@ -1959,6 +1968,7 @@ const outputEl   = document.getElementById("output");
 const solveBtn   = document.getElementById("solveButton");
 const spinner2   = document.getElementById("spinner");
 const solveIcon  = document.getElementById("solveIcon");
+const solveLabel = document.getElementById("solveLabel");
 const hintBtn    = document.getElementById("hintButton");
 const hintSpinner= document.getElementById("hintSpinner");
 const hintIcon   = document.getElementById("hintIcon");
@@ -2060,6 +2070,22 @@ function deriveRotAndAnchor(pieceIdx, cells) {
    spin-then-slide into its board position, one at a time,
    instead of just snapping the whole solution in at once.
 ═══════════════════════════════════════════════════════════ */
+// True for the whole span the Solve button is active (the brief search plus
+// the piece-by-piece animation) — the button itself becomes a red "Cancel"
+// for that whole span. solveCancelled is checked inside the animation frame
+// loops (see spinPieceInTray/movePieceInTray/wait) so a click takes effect
+// immediately rather than waiting for the current piece to finish animating.
+let solveRunning = false;
+let solveCancelled = false;
+
+function setSolveButtonRunning(running) {
+    solveRunning = running;
+    solveBtn.classList.toggle("btn-cancel", running);
+    solveBtn.classList.toggle("primary", !running);
+    solveLabel.textContent = running ? "Cancel" : "Solve";
+    solveBtn.title = running ? "Stop the solve animation" : "";
+}
+
 const SOLVE_ANIM_SPIN_MS = 260; // quick spin in the tray to reveal the rotation
 const SOLVE_ANIM_MOVE_MS = 340; // slide from the tray into its board slot
 const SOLVE_ANIM_GAP_MS  = 90;  // brief pause before the next piece starts
@@ -2091,6 +2117,7 @@ function spinPieceInTray(pieceIdx, durationMs) {
         const baseX = ps.x - b.cx, baseY = ps.y - b.cy;
         const start = performance.now();
         (function step(now) {
+            if (solveCancelled) { resolve(); return; } // stop this frame loop immediately
             const t = Math.min(1, (now - start) / durationMs);
             const angle = easeInOutCubic(t) * 360;
             g.setAttribute("transform", `translate(${baseX},${baseY}) rotate(${angle} ${b.cx} ${b.cy})`);
@@ -2107,6 +2134,7 @@ function movePieceInTray(pieceIdx, targetX, targetY, durationMs) {
         const startX = ps.x, startY = ps.y;
         const start = performance.now();
         (function step(now) {
+            if (solveCancelled) { resolve(); return; } // freeze right where it is
             const t = Math.min(1, (now - start) / durationMs);
             const eased = easeInOutCubic(t);
             ps.x = startX + (targetX - startX) * eased;
@@ -2117,19 +2145,28 @@ function movePieceInTray(pieceIdx, targetX, targetY, durationMs) {
     });
 }
 
-function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function wait(ms) {
+    return new Promise(resolve => {
+        if (solveCancelled) { resolve(); return; }
+        setTimeout(resolve, ms);
+    });
+}
 
 // Plays the full spin → slide → snap-into-place sequence for one piece.
+// Bails out (without placing the piece) as soon as a cancellation is seen,
+// leaving things exactly where the animation was interrupted.
 async function animatePieceIntoPlace(pieceIdx, targetRotIdx, anchorRow, anchorCol) {
     hintedPieceIdx = pieceIdx; // reuse the hint glow as a "now placing this one" spotlight
     renderFreePieces();
 
     await spinPieceInTray(pieceIdx, SOLVE_ANIM_SPIN_MS);
+    if (solveCancelled) { redrawBoard(); renderFreePieces(); return; }
     pieceStates[pieceIdx].rotIdx = targetRotIdx;
     renderFreePieces();
 
     const target = boardAnchorToFreeXY(pieceIdx, targetRotIdx, anchorRow, anchorCol);
     await movePieceInTray(pieceIdx, target.x, target.y, SOLVE_ANIM_MOVE_MS);
+    if (solveCancelled) { redrawBoard(); renderFreePieces(); return; }
 
     tryPlacePiece(pieceIdx, getPieceCells(pieceIdx, targetRotIdx), anchorRow, anchorCol);
     redrawBoard(); // also clears hintedPieceIdx/hint highlight, since the board just changed for real
@@ -2160,11 +2197,18 @@ function syncPieceStatesFromSolution(solution) {
 }
 
 solveBtn.addEventListener("click", async () => {
+    if (solveRunning) {
+        // This click is a Cancel — request the animation to stop, and don't
+        // let it be clicked again while that's winding down.
+        solveCancelled = true;
+        solveBtn.disabled = true;
+        return;
+    }
+
     const m = selMonth.value, d = selDay.value, w = selWeekday.value;
     const hasFixedPieces = pieceStates.some(ps => ps.placed);
 
     const setControlsDisabled = disabled => {
-        solveBtn.disabled = disabled;
         hintBtn.disabled = disabled;
         scrambleOptBtns.forEach(b => b.disabled = disabled);
         document.getElementById("todayBtn").disabled = disabled;
@@ -2175,6 +2219,8 @@ solveBtn.addEventListener("click", async () => {
     };
 
     setControlsDisabled(true);
+    solveCancelled = false;
+    setSolveButtonRunning(true);
     spinner2.style.display = "block";
     solveIcon.style.display = "none";
     setStatus(`Solving for ${w} · ${m} ${d}...`, "loading");
@@ -2187,8 +2233,20 @@ solveBtn.addEventListener("click", async () => {
     spinner2.style.display = "none";
     solveIcon.style.display = "block";
 
+    // A cancel click can only be processed once this synchronous search
+    // returns control to the event loop — catch it here before committing
+    // to anything, in case it happened during the (usually brief) search.
+    if (solveCancelled) {
+        setControlsDisabled(false);
+        setSolveButtonRunning(false);
+        solveBtn.disabled = false;
+        setStatus("Solve cancelled", "error");
+        return;
+    }
+
     if (!result.solved) {
         setControlsDisabled(false);
+        setSolveButtonRunning(false);
         setStatus(
             hasFixedPieces
                 ? `No solution found for ${w} · ${m} ${d} with the current pieces kept in place`
@@ -2221,15 +2279,23 @@ solveBtn.addEventListener("click", async () => {
     isAutoSolved = true;
     setHoldingPiece(true); // suppress the (up to 1s) solution recount after every intermediate piece
     for (const step of steps) {
+        if (solveCancelled) break;
         await animatePieceIntoPlace(step.pieceIdx, step.rotIdx, step.anchorRow, step.anchorCol);
     }
     setHoldingPiece(false);
     scheduleSolutionCount();
 
     setControlsDisabled(false);
-    setStatus(`✓ Solved! — ${w} · ${m} ${d}`, "solved");
-    buildLegend();
-    if (checkWin()) showWinPopup();
+    setSolveButtonRunning(false);
+    solveBtn.disabled = false;
+
+    if (solveCancelled) {
+        setStatus("Solve cancelled — pieces placed so far are kept", "error");
+    } else {
+        setStatus(`✓ Solved! — ${w} · ${m} ${d}`, "solved");
+        buildLegend();
+        if (checkWin()) showWinPopup();
+    }
 });
 
 hintBtn.addEventListener("click", () => {
