@@ -296,6 +296,12 @@
     .locked-cell { cursor: not-allowed !important; }
     .locked-label { pointer-events: none; }
 
+    /* Hint highlighting: marks the target cells on the board, and the tray
+       piece that goes there — shows where, leaves placing it to the player. */
+    .hint-cell { fill-opacity: 0.45; stroke-width: 5; pointer-events: none; }
+
+    .piece-group.hint-target { filter: drop-shadow(0 0 8px #ffee58) drop-shadow(0 0 8px #ffee58); }
+
     .legend {
       margin-top: 16px;
       display: flex;
@@ -489,6 +495,17 @@ const PIECE_ROTATIONS = Object.fromEntries(
 
 const NEIGHBOR_COORDS = [[-1,0], [1,0], [0,-1], [0,1], [1,1], [-1,-1]];
 
+// Fisher–Yates shuffle into a new array — never mutates the input, since
+// PIECE_ROTATIONS entries are shared global data reused across every solve.
+function shuffledCopy(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
 class PuzzleSolver {
     constructor(board, targetMonth, targetDay, targetWeekday, fixedState = null) {
         this.board = board;
@@ -500,6 +517,11 @@ class PuzzleSolver {
         this.solution = [];
         this.usedPieces = {};
         this.fixedState = fixedState; // pieces already on the board that must stay put
+        // Randomize which piece/rotation/anchor candidatePlacements() tries
+        // first, so Solve and Hint don't always land on the same solution
+        // for a given fixed state. SolutionCounter (below) turns this back
+        // off, since it just needs a correct total, not variety.
+        this.randomizeOrder = true;
         this.solverSetup();
     }
 
@@ -570,10 +592,15 @@ class PuzzleSolver {
     // (keep going and tally every solution) so the placement-generation
     // logic itself only lives in one place.
     *candidatePlacements(rTarget, cTarget) {
-        for (const [idx, name] of Object.keys(this.usedPieces).entries()) {
+        let pieceOrder = PIECE_NAMES.map((name, idx) => [idx, name]);
+        if (this.randomizeOrder) pieceOrder = shuffledCopy(pieceOrder);
+
+        for (const [idx, name] of pieceOrder) {
             if (this.usedPieces[name]) continue;
-            for (const orientation of PIECE_ROTATIONS[name]) {
-                for (const [rPivot, cPivot] of orientation) {
+            const orientations = this.randomizeOrder ? shuffledCopy(PIECE_ROTATIONS[name]) : PIECE_ROTATIONS[name];
+            for (const orientation of orientations) {
+                const pivots = this.randomizeOrder ? shuffledCopy(orientation) : orientation;
+                for (const [rPivot, cPivot] of pivots) {
                     const placed = [];
                     let canPlace = true;
                     for (const [dx, dy] of orientation) {
@@ -630,6 +657,9 @@ function solveCalendar(month, day, weekday, fixedState = null) {
 class SolutionCounter extends PuzzleSolver {
     constructor(board, targetMonth, targetDay, targetWeekday, fixedState, cap, timeBudgetMs) {
         super(board, targetMonth, targetDay, targetWeekday, fixedState);
+        // Counting needs an exhaustive, reproducible traversal — not variety —
+        // so turn PuzzleSolver's randomized ordering back off.
+        this.randomizeOrder = false;
         this.count = 0;
         this.nodes = 0;
         this.cap = cap;
@@ -895,9 +925,19 @@ function initSVG() {
     const freeLayer = makeSVG("g");
     freeLayer.id = "freeLayer";
     svg.appendChild(freeLayer);
+    const hintLayer = makeSVG("g");
+    hintLayer.id = "hintLayer";
+    hintLayer.style.pointerEvents = "none";
+    svg.appendChild(hintLayer);
 }
 
 function drawBoard(board) {
+    // The board's real state is changing, so any earlier hint is now stale —
+    // clear it rather than leaving a highlight pointing at an outdated target.
+    hintedPieceIdx = -1;
+    const hintLayer = document.getElementById("hintLayer");
+    if (hintLayer) hintLayer.innerHTML = "";
+
     const layer = document.getElementById("boardLayer");
     layer.innerHTML = "";
     const lockedCentroids = {}; // colorIdx -> {sx, sy, n}
@@ -1003,6 +1043,7 @@ const WEEKDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 let manualState = [];
 let pieceStates = [];
 let isAutoSolved = false;
+let hintedPieceIdx = -1; // which tray piece (if any) the Hint button is pointing at
 
 function getPieceCells(pieceIdx, rotIdx) {
     const name = PIECE_NAMES[pieceIdx];
@@ -1114,7 +1155,7 @@ function buildPieceGroup(pieceIdx, centerX, centerY) {
     const b = pieceLocalBounds(pieceIdx, ps.rotIdx);
 
     const g = makeSVG("g");
-    g.setAttribute("class", "piece-group");
+    g.setAttribute("class", pieceIdx === hintedPieceIdx ? "piece-group hint-target" : "piece-group");
     g.setAttribute("transform", `translate(${centerX - b.cx},${centerY - b.cy})`);
 
     b.pts.forEach(([x, y]) => {
@@ -1180,6 +1221,23 @@ function buildPieceGroup(pieceIdx, centerX, centerY) {
     }, {passive: false});
 
     return g;
+}
+
+function drawHintHighlight(cells, colorIdx) {
+    const hintLayer = document.getElementById("hintLayer");
+    if (!hintLayer) return;
+    hintLayer.innerHTML = "";
+    const color = COLORS[String(colorIdx)] || "#ffee58";
+    for (const [row, col] of cells) {
+        const [rawX, rawY] = boardToPixel(row, col);
+        const x = rawX + BOARD_ORIGIN.x, y = rawY + BOARD_ORIGIN.y;
+        const glow = makeSVG("polygon");
+        glow.setAttribute("points", hexPoints(x, y));
+        glow.setAttribute("fill", color);
+        glow.setAttribute("stroke", "#ffee58");
+        glow.setAttribute("class", "hint-cell");
+        hintLayer.appendChild(glow);
+    }
 }
 
 function renderFreePieces() {
@@ -1749,10 +1807,14 @@ hintBtn.addEventListener("click", () => {
             }
         }
 
-        let targetIdx = -1;
+        // Collect every unplaced piece the solution actually uses, and pick
+        // one at random — otherwise this always lands on the lowest-index
+        // unplaced piece (which tended to be the same piece every time).
+        const candidates = [];
         for (let i = 0; i < pieceStates.length; i++) {
-            if (!pieceStates[i].placed && cellsByColor[i + 1]) { targetIdx = i; break; }
+            if (!pieceStates[i].placed && cellsByColor[i + 1]) candidates.push(i);
         }
+        const targetIdx = candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : -1;
 
         if (targetIdx === -1) {
             setStatus(checkWin() ? "🎉 Puzzle solved! Well done!" : "Nothing left to hint — you're all set.", "solved");
@@ -1763,19 +1825,16 @@ hintBtn.addEventListener("click", () => {
         const found = deriveRotAndAnchor(targetIdx, cells);
         if (!found) return; // shouldn't happen if the solver's output is well-formed
 
+        // Show where it goes — rotate the tray piece to the correct
+        // orientation and highlight both it and the target cells — but
+        // leave actually dragging it into place to the player.
         const ps = pieceStates[targetIdx];
         ps.rotIdx = found.rotIdx;
-        tryPlacePiece(targetIdx, getPieceCells(targetIdx, found.rotIdx), found.anchorRow, found.anchorCol);
-
-        redrawBoard();
+        hintedPieceIdx = targetIdx;
         renderFreePieces();
+        drawHintHighlight(cells, targetIdx + 1);
 
-        if (checkWin()) {
-            setStatus("🎉 Puzzle solved! Well done!", "solved");
-        } else {
-            const rem = pieceStates.filter(p => !p.placed).length;
-            setStatus(`💡 Hint: placed "${PIECE_NAMES[targetIdx]}" · ${rem} piece${rem !== 1 ? "s" : ""} remaining`);
-        }
+        setStatus(`💡 Hint: "${PIECE_NAMES[targetIdx]}" goes at the highlighted cells — drag it into place`);
     }, 30));
 });
 
