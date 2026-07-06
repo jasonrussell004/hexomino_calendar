@@ -368,6 +368,101 @@
       flex-shrink: 0;
     }
 
+    .score-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 7px 16px;
+      margin-bottom: 14px;
+      font-family: var(--mono);
+      cursor: default;
+      transition: border-color 0.2s;
+    }
+    .score-badge .score-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .score-badge .score-value {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--accent-hi);
+      min-width: 1.5em;
+      text-align: right;
+    }
+    .score-badge.negative { border-color: var(--danger); }
+    .score-badge.negative .score-value { color: var(--danger); }
+    .score-badge.pulse .score-value { animation: scorePulse 0.35s ease-out; }
+    @keyframes scorePulse {
+      0%   { transform: scale(1.35); }
+      100% { transform: scale(1); }
+    }
+
+    /* ── win summary popup ───────────────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 7, 12, 0.72);
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: var(--surface);
+      border: 1px solid var(--border-hi);
+      border-radius: 12px;
+      padding: 28px 26px 22px;
+      width: 100%;
+      max-width: 360px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      animation: modalPop 0.22s ease-out;
+    }
+    @keyframes modalPop {
+      0%   { transform: scale(0.92); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .modal-box h2 {
+      font-family: var(--mono);
+      font-size: 19px;
+      color: var(--accent-hi);
+      margin-bottom: 18px;
+      letter-spacing: 0.5px;
+    }
+    .modal-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+    .modal-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--text-muted);
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .modal-row span:last-child {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--text);
+    }
+    .modal-row.highlight span:last-child { color: var(--accent-hi); font-size: 20px; }
+    .modal-row.perfect span:last-child { color: var(--success); }
+    .modal-box .btn { width: 100%; }
+
     @media (max-width: 480px) {
       .controls { padding: 10px 12px; gap: 8px 12px; }
       select { font-size: 13px; padding: 6px 8px; min-width: 72px; }
@@ -462,6 +557,11 @@
 
 <div id="output">Choose a date above, then drag pieces or hit Solve</div>
 
+<div class="score-badge" id="scoreBadge" title="10 pts per piece you place · -10 if you remove one · -5 per hint · +3 for each 3-tile piece placed before any 4-tile piece">
+  <span class="score-label">Score</span>
+  <span class="score-value" id="scoreValue">0</span>
+</div>
+
 <div class="solution-info" id="solutionInfo" role="button" tabindex="0" title="Click to reveal the solution count">
   <span class="si-placeholder" id="solutionPlaceholder">Click to show solution count · click again to hide</span>
   <span class="si-label">Possible solutions from here</span>
@@ -478,6 +578,31 @@
 </div>
 
 <div class="legend" id="legend"></div>
+
+<div class="modal-overlay" id="winOverlay">
+  <div class="modal-box">
+    <h2>🎉 Puzzle Solved!</h2>
+    <div class="modal-rows">
+      <div class="modal-row highlight">
+        <span>Final score</span>
+        <span id="winScore">0</span>
+      </div>
+      <div class="modal-row">
+        <span>Hints used</span>
+        <span id="winHints">0</span>
+      </div>
+      <div class="modal-row">
+        <span>3-tile bonus earned</span>
+        <span id="winBonus">0</span>
+      </div>
+      <div class="modal-row">
+        <span>Max possible (this scramble, no hints)</span>
+        <span id="winMax">0</span>
+      </div>
+    </div>
+    <button class="btn primary" id="winCloseBtn">Nice!</button>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -924,31 +1049,40 @@ function computeLayout() {
     const boardW = maxX - minX, boardH = maxY - minY;
     const trayCols = 4;
     const slot = 150;
-    const trayRows = Math.ceil(PIECE_NAMES.length / trayCols);
-    const trayW = trayCols * slot;
-    const trayH = trayRows * slot;
     const gap = 26;
     const pad = 16;
+
+    // Split the pieces into two roughly-equal groups — one tray above the
+    // board, one below — instead of stacking everything in a single tray.
+    const aboveCount = Math.floor(PIECE_NAMES.length / 2);
+    const belowCount = PIECE_NAMES.length - aboveCount;
+    const aboveRows = Math.ceil(aboveCount / trayCols);
+    const belowRows = Math.ceil(belowCount / trayCols);
+    const trayW = trayCols * slot;
+    const aboveH = aboveRows * slot;
+    const belowH = belowRows * slot;
+
     const totalW = Math.max(boardW, trayW);
-    const totalH = boardH + gap + trayH;
+    const totalH = aboveH + gap + boardH + gap + belowH;
 
     // BOARD_ORIGIN maps raw boardToPixel(row,col) output into world space,
-    // shifted so the board is horizontally centered within totalW and
-    // top-aligned at world y = 0.
+    // shifted so the board is horizontally centered within totalW, with the
+    // "above" tray's height (plus a gap) pushing it down from world y = 0.
     const boardOrigin = {
         x: (totalW - boardW) / 2 - minX,
-        y: -minY
+        y: (aboveH + gap) - minY
     };
 
-    // Tray region is likewise centered within totalW, placed below the board.
+    // Both trays are centered within totalW, one above the board, one below.
     const trayX0 = (totalW - trayW) / 2;
-    const trayY0 = boardH + gap;
+    const trayAboveY0 = 0;
+    const trayBelowY0 = aboveH + gap + boardH + gap;
 
     return {
         boardOrigin,
         boardMinX: (totalW - boardW) / 2, boardMaxX: (totalW - boardW) / 2 + boardW,
-        boardMinY: 0, boardMaxY: boardH,
-        trayX0, trayY0, trayCols, trayRows, slot,
+        boardMinY: aboveH + gap, boardMaxY: aboveH + gap + boardH,
+        trayX0, trayAboveY0, trayBelowY0, trayCols, aboveCount, belowCount, slot,
         viewX: -pad, viewY: -pad,
         viewW: totalW + pad * 2, viewH: totalH + pad * 2
     };
@@ -956,6 +1090,11 @@ function computeLayout() {
 
 const LAYOUT = computeLayout();
 const BOARD_ORIGIN = LAYOUT.boardOrigin;
+
+// Which tray zone each piece starts in — first half above the board, the
+// rest below — so the tray reads as "spread equally" on both sides.
+const ABOVE_PIECE_IDX = new Set(PIECE_NAMES.map((_, i) => i).slice(0, LAYOUT.aboveCount));
+
 
 function initSVG() {
     const svg = document.getElementById("board");
@@ -1106,6 +1245,114 @@ let pieceStates = [];
 let isAutoSolved = false;
 let hintedPieceIdx = -1; // which tray piece (if any) the Hint button is pointing at
 
+/* ═══════════════════════════════════════════════════════════
+   Scoring
+   +10 for every piece the user drags into place, -10 whenever
+   a placed piece is pulled back off the board, -5 per hint
+   given. Score resets to zero on Scramble or Reset. Pieces
+   placed automatically (Scramble locks, full Solve) never
+   affect score — only the player's own placements do.
+
+   Bonus: +3 for every 3-tile piece placed before any 4-tile
+   piece has been played. "Played" is a one-way flag — once a
+   4-tile piece has gone onto the board, no later 3-tile
+   placement qualifies, even if that 4-tile piece is later
+   picked back up. And the +3 itself only sticks for as long as
+   that particular 3-tile piece stays on the board: pulling a
+   bonus-earning piece back off revokes its +3 immediately, so
+   there's no way to bank the bonus and then rearrange freely.
+═══════════════════════════════════════════════════════════ */
+const PIECE_SIZES = PIECE_NAMES.map(name => PIECES[name].length);
+
+let score = 0;
+let hintsUsed = 0;
+let bonusEarned = 0;
+let fourTilePlayed = false; // one-way: true forever once a 4-tile piece is placed
+let maxPossibleScore = PIECE_NAMES.length * 10;
+let puzzleCompletedAnnounced = false;
+
+const scoreBadgeEl = document.getElementById("scoreBadge");
+const scoreValueEl = document.getElementById("scoreValue");
+
+function updateScoreDisplay() {
+    scoreValueEl.textContent = String(score);
+    scoreBadgeEl.classList.toggle("negative", score < 0);
+    scoreBadgeEl.classList.remove("pulse");
+    void scoreBadgeEl.offsetWidth; // restart the pulse animation each time
+    scoreBadgeEl.classList.add("pulse");
+}
+
+function addScore(delta) {
+    score += delta;
+    updateScoreDisplay();
+}
+
+function resetScore() {
+    score = 0;
+    hintsUsed = 0;
+    bonusEarned = 0;
+    fourTilePlayed = false;
+    updateScoreDisplay();
+}
+
+// Called right after a piece the player dragged themselves lands on the
+// board — awards/tracks the 3-tile-before-any-4-tile bonus for that piece.
+function registerPiecePlacementBonus(pieceIdx) {
+    const ps = pieceStates[pieceIdx];
+    if (PIECE_SIZES[pieceIdx] === 3) {
+        if (!fourTilePlayed) {
+            addScore(3);
+            bonusEarned += 3;
+            ps.bonusAwarded = true;
+        } else {
+            ps.bonusAwarded = false;
+        }
+    } else {
+        fourTilePlayed = true;
+        ps.bonusAwarded = false;
+    }
+}
+
+// Called when a piece is pulled back off the board — revokes its bonus if
+// it was currently holding one, so removing a piece can never keep the
+// points from a bonus that no longer reflects the board's real state.
+function revokePieceBonusIfAny(pieceIdx) {
+    const ps = pieceStates[pieceIdx];
+    if (ps.bonusAwarded) {
+        addScore(-3);
+        bonusEarned -= 3;
+        ps.bonusAwarded = false;
+    }
+}
+
+// The max achievable score depends on how many pieces are actually left for
+// the player to place — locked (scrambled-in) pieces don't count — plus
+// whatever 3-tile bonus is still achievable. If a 4-tile piece is already
+// locked onto the board by a scramble, no bonus is achievable at all.
+function updateMaxPossibleScore() {
+    const unplacedIdx = pieceStates.map((_, i) => i).filter(i => !pieceStates[i].locked);
+    const base = unplacedIdx.length * 10;
+    const fourAlreadyLocked = pieceStates.some((ps, i) => ps.locked && PIECE_SIZES[i] === 4);
+    const bonus = fourAlreadyLocked ? 0 : unplacedIdx.filter(i => PIECE_SIZES[i] === 3).length * 3;
+    maxPossibleScore = base + bonus;
+}
+
+function showWinPopup() {
+    if (puzzleCompletedAnnounced) return;
+    puzzleCompletedAnnounced = true;
+    document.getElementById("winScore").textContent = String(score);
+    document.getElementById("winHints").textContent = String(hintsUsed);
+    document.getElementById("winBonus").textContent = String(bonusEarned);
+    document.getElementById("winMax").textContent = String(maxPossibleScore);
+    const maxRow = document.getElementById("winMax").closest(".modal-row");
+    maxRow.classList.toggle("perfect", hintsUsed === 0 && score === maxPossibleScore);
+    document.getElementById("winOverlay").classList.add("show");
+}
+
+document.getElementById("winCloseBtn").addEventListener("click", () => {
+    document.getElementById("winOverlay").classList.remove("show");
+});
+
 function getPieceCells(pieceIdx, rotIdx) {
     const name = PIECE_NAMES[pieceIdx];
     const rots = PIECE_ROTATIONS[name];
@@ -1122,17 +1369,20 @@ function initManualState(hardReset = false) {
         rotIdx: (!hardReset && pieceStates[i]) ? pieceStates[i].rotIdx : 0,
         placed: false,
         locked: false,
+        bonusAwarded: false,
         x: (!hardReset && pieceStates[i]) ? pieceStates[i].x : undefined,
         y: (!hardReset && pieceStates[i]) ? pieceStates[i].y : undefined
     }));
     isAutoSolved = false;
+    puzzleCompletedAnnounced = false;
+    updateMaxPossibleScore();
 }
 
 function redrawBoard() { drawBoard(manualState); scheduleSolutionCount(); }
 
 function removePieceFromBoard(pieceIdx) {
     const ps = pieceStates[pieceIdx];
-    if (!ps.placed) return;
+    if (!ps.placed) return false;
     const cells = getPieceCells(pieceIdx, ps.rotIdx);
     const coords = cells.map(([dr, dc]) => [ps.anchorRow + dr, ps.anchorCol + dc]);
     const colorIdx = pieceIdx + 1;
@@ -1140,6 +1390,7 @@ function removePieceFromBoard(pieceIdx) {
         if (manualState[r] && manualState[r][c] === colorIdx) manualState[r][c] = 0;
     }
     ps.placed = false;
+    return true;
 }
 
 // Picking up a piece that's already snapped onto the board: detach it from
@@ -1168,6 +1419,8 @@ function onBoardPieceDragStart(e) {
     ps.y = anchorWorldY - b.pts[0][1] + b.cy;
 
     removePieceFromBoard(pieceIdx);
+    addScore(-10);
+    revokePieceBonusIfAny(pieceIdx);
     redrawBoard();
     renderFreePieces();
 
@@ -1305,17 +1558,20 @@ function drawHintHighlight(cells, colorIdx) {
 function renderFreePieces() {
     const layer = document.getElementById("freeLayer");
     layer.innerHTML = "";
-    let slotIdx = 0;
+    let aboveSlot = 0, belowSlot = 0;
     PIECE_NAMES.forEach((name, i) => {
         const ps = pieceStates[i];
-        if (ps.placed) { slotIdx++; return; }
+        const isAbove = ABOVE_PIECE_IDX.has(i);
+        if (ps.placed) { if (isAbove) aboveSlot++; else belowSlot++; return; }
         if (ps.x === undefined || ps.y === undefined) {
+            const slotIdx = isAbove ? aboveSlot : belowSlot;
             const col = slotIdx % LAYOUT.trayCols;
             const row = Math.floor(slotIdx / LAYOUT.trayCols);
+            const y0 = isAbove ? LAYOUT.trayAboveY0 : LAYOUT.trayBelowY0;
             ps.x = LAYOUT.trayX0 + col * LAYOUT.slot + LAYOUT.slot / 2;
-            ps.y = LAYOUT.trayY0 + row * LAYOUT.slot + LAYOUT.slot / 2;
+            ps.y = y0 + row * LAYOUT.slot + LAYOUT.slot / 2;
         }
-        slotIdx++;
+        if (isAbove) aboveSlot++; else belowSlot++;
         layer.appendChild(buildPieceGroup(i, ps.x, ps.y));
     });
 }
@@ -1472,10 +1728,13 @@ function onPieceDragEnd(e) {
 
     if (hit && hit.valid) {
         if (tryPlacePiece(pieceIdx, cells, hit.anchorRow, hit.anchorCol)) {
+            addScore(10);
+            registerPiecePlacementBonus(pieceIdx);
             redrawBoard();
             renderFreePieces();
             if (checkWin()) {
                 setStatus("🎉 Puzzle solved! Well done!", "solved");
+                showWinPopup();
             } else {
                 const rem = pieceStates.filter(p => !p.placed).length;
                 setStatus(`"${PIECE_NAMES[pieceIdx]}" placed · ${rem} piece${rem !== 1 ? "s" : ""} remaining`);
@@ -1772,7 +2031,7 @@ selDay.addEventListener("change",     () => drawInitial());
 selWeekday.addEventListener("change", () => drawInitial());
 dateInput.addEventListener("change",  () => { applyDateFromInput(dateInput.value); drawInitial(); });
 document.getElementById("todayBtn").addEventListener("click", () => { applyToday(); drawInitial(); });
-document.getElementById("resetBtn").addEventListener("click", () => { legendEl.innerHTML = ""; drawInitial(true); });
+document.getElementById("resetBtn").addEventListener("click", () => { legendEl.innerHTML = ""; resetScore(); drawInitial(true); });
 
 // After solving, figure out which rotation + anchor cell reproduces a given
 // piece's actual cells in the solution, so it stays draggable afterward
@@ -1970,6 +2229,7 @@ solveBtn.addEventListener("click", async () => {
     setControlsDisabled(false);
     setStatus(`✓ Solved! — ${w} · ${m} ${d}`, "solved");
     buildLegend();
+    if (checkWin()) showWinPopup();
 });
 
 hintBtn.addEventListener("click", () => {
@@ -2024,6 +2284,7 @@ hintBtn.addEventListener("click", () => {
 
         if (targetIdx === -1) {
             setStatus(checkWin() ? "🎉 Puzzle solved! Well done!" : "Nothing left to hint — you're all set.", "solved");
+            if (checkWin()) showWinPopup();
             return;
         }
 
@@ -2039,6 +2300,8 @@ hintBtn.addEventListener("click", () => {
         hintedPieceIdx = targetIdx;
         renderFreePieces();
         drawHintHighlight(cells, targetIdx + 1);
+        hintsUsed++;
+        addScore(-5);
 
         setStatus(`💡 Hint: "${PIECE_NAMES[targetIdx]}" goes at the highlighted cells — drag it into place`);
     }, 30));
@@ -2046,6 +2309,7 @@ hintBtn.addEventListener("click", () => {
 
 function runScramble(n) {
     const m = selMonth.value, d = selDay.value, w = selWeekday.value;
+    resetScore();
     scrambleOptBtns.forEach(b => b.disabled = true);
     solveBtn.disabled = true;
     hintBtn.disabled = true;
@@ -2102,6 +2366,10 @@ function runScramble(n) {
             tryPlacePiece(pieceIdx, getPieceCells(pieceIdx, found.rotIdx), found.anchorRow, found.anchorCol);
             ps.locked = true;
         });
+        // A scrambled-in 4-tile piece counts as already "played" for bonus
+        // purposes — it was on the board before the player made any moves.
+        if (pieceStates.some((ps, i) => ps.locked && PIECE_SIZES[i] === 4)) fourTilePlayed = true;
+        updateMaxPossibleScore();
 
         redrawBoard();
         renderFreePieces();
