@@ -195,6 +195,48 @@
     #output.error   { color: var(--danger); }
     #output.loading { color: var(--accent-hi); }
 
+    .solution-info {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 14px;
+      margin-bottom: 14px;
+      width: 100%;
+      max-width: 740px;
+      letter-spacing: 0.3px;
+      transition: border-color 0.2s;
+      cursor: pointer;
+      user-select: none;
+    }
+    .solution-info:hover { border-color: var(--border-hi); }
+    .solution-info .si-label {
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-size: 10px;
+    }
+    .solution-info .si-value {
+      color: var(--accent-hi);
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .solution-info .si-placeholder {
+      font-style: italic;
+    }
+    .solution-info.zero { border-color: var(--danger); }
+    .solution-info.zero .si-value { color: var(--danger); }
+    .solution-info.capped .si-value { color: var(--accent-hi); }
+    .solution-info.paused {
+      opacity: 0.5;
+      transition: opacity 0.15s;
+    }
+
     /* ── merged board + tray box ─────────────────────────── */
     .puzzle-header {
       display: flex;
@@ -353,6 +395,12 @@
 
 <div id="output">Choose a date above, then drag pieces or hit Solve</div>
 
+<div class="solution-info" id="solutionInfo" role="button" tabindex="0" title="Click to reveal the solution count">
+  <span class="si-placeholder" id="solutionPlaceholder">Click to show solution count · click again to hide</span>
+  <span class="si-label">Possible solutions from here</span>
+  <span class="si-value" id="solutionCountVal">–</span>
+</div>
+
 <div class="puzzle-header">
   <span class="puzzle-title">Board &amp; pieces</span>
   <span class="puzzle-hint">Drag pieces anywhere in the box · scroll or tap ↻ ↺ to rotate · drag a placed piece to move or remove it · 🔒 locked pieces need a Reset first</span>
@@ -492,20 +540,36 @@ class PuzzleSolver {
                         }
                     }
                 }
-                if ([1, 2, 5, 7].includes(size)) return true;
+                // Piece sizes are 3 (×3) and 4 (×10). A connected empty region can
+                // only ever be filled if its size is some non-negative combination
+                // of 3s and 4s — impossible sizes are exactly 1, 2, and 5 (the
+                // Frobenius/"coin problem" gaps for denominations 3 and 4; every
+                // integer above 5, including 7 = 3+4, is representable). This is a
+                // fast necessary-condition prune, not a full fit/shape check —
+                // hasUnfillableHoles() catches only clearly-dead branches early;
+                // the real placement search still verifies everything else.
+                if ([1, 2, 5].includes(size)) return true;
             }
         }
         return false;
     }
 
-    solve() {
-        if (this.hasUnfillableHoles()) return false;
-        let target = null;
-        for (let r = 0; r < this.rows && !target; r++)
-            for (let c = 0; c < this.cols && !target; c++)
-                if (this.solution[r][c] === 0) target = [r, c];
-        if (!target) return true;
-        const [rTarget, cTarget] = target;
+    // First still-empty board cell, in reading order, or null if the board
+    // is completely filled.
+    findFirstEmptyCell() {
+        for (let r = 0; r < this.rows; r++)
+            for (let c = 0; c < this.cols; c++)
+                if (this.solution[r][c] === 0) return [r, c];
+        return null;
+    }
+
+    // Every way an unused piece (in some rotation, anchored at some cell of
+    // itself) can be placed so that it covers the given target cell without
+    // overlapping a filled cell or running off the board. Shared by both
+    // PuzzleSolver (stop at the first full solution) and SolutionCounter
+    // (keep going and tally every solution) so the placement-generation
+    // logic itself only lives in one place.
+    *candidatePlacements(rTarget, cTarget) {
         for (const [idx, name] of Object.keys(this.usedPieces).entries()) {
             if (this.usedPieces[name]) continue;
             for (const orientation of PIECE_ROTATIONS[name]) {
@@ -523,14 +587,23 @@ class PuzzleSolver {
                             break;
                         }
                     }
-                    if (!canPlace) continue;
-                    for (const [pr, pc] of placed) this.solution[pr][pc] = idx + 1;
-                    this.usedPieces[name] = true;
-                    if (this.solve()) return true;
-                    this.usedPieces[name] = false;
-                    for (const [pr, pc] of placed) this.solution[pr][pc] = 0;
+                    if (canPlace) yield { idx, name, placed };
                 }
             }
+        }
+    }
+
+    solve() {
+        if (this.hasUnfillableHoles()) return false;
+        const target = this.findFirstEmptyCell();
+        if (!target) return true;
+        const [rTarget, cTarget] = target;
+        for (const { idx, name, placed } of this.candidatePlacements(rTarget, cTarget)) {
+            for (const [pr, pc] of placed) this.solution[pr][pc] = idx + 1;
+            this.usedPieces[name] = true;
+            if (this.solve()) return true;
+            this.usedPieces[name] = false;
+            for (const [pr, pc] of placed) this.solution[pr][pc] = 0;
         }
         return false;
     }
@@ -540,6 +613,167 @@ function solveCalendar(month, day, weekday, fixedState = null) {
     const solver = new PuzzleSolver(BOARD, month, day, weekday, fixedState);
     return { solved: solver.solve(), solution: solver.solution };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Solution counting — extends PuzzleSolver and reuses all of its
+   setup (solverSetup), pruning (hasUnfillableHoles), and placement
+   enumeration (candidatePlacements/findFirstEmptyCell). Only
+   solve() itself is overridden, since counting needs genuinely
+   different termination behavior: instead of stopping at the
+   first full solution, it keeps going and tallies every way the
+   remaining empty cells could be filled from here. Exhaustive
+   counting on a mostly-empty board can explore an enormous search
+   tree, so this is bounded by both a result cap and a wall-clock
+   time budget; once either is hit it reports a lower bound
+   instead of hanging the tab.
+═══════════════════════════════════════════════════════════ */
+class SolutionCounter extends PuzzleSolver {
+    constructor(board, targetMonth, targetDay, targetWeekday, fixedState, cap, timeBudgetMs) {
+        super(board, targetMonth, targetDay, targetWeekday, fixedState);
+        this.count = 0;
+        this.nodes = 0;
+        this.cap = cap;
+        this.timeBudgetMs = timeBudgetMs;
+        this.startTime = Date.now();
+        this.timedOut = false;
+    }
+
+    solve() {
+        this.nodes++;
+        // Only check the clock every so often — Date.now() on every node
+        // would itself slow the search down.
+        if ((this.nodes & 0xFFF) === 0 && Date.now() - this.startTime > this.timeBudgetMs) {
+            this.timedOut = true;
+            return;
+        }
+        if (this.timedOut || this.count >= this.cap) return;
+        if (this.hasUnfillableHoles()) return;
+
+        const target = this.findFirstEmptyCell();
+        if (!target) { this.count++; return; }
+
+        const [rTarget, cTarget] = target;
+        for (const { idx, name, placed } of this.candidatePlacements(rTarget, cTarget)) {
+            for (const [pr, pc] of placed) this.solution[pr][pc] = idx + 1;
+            this.usedPieces[name] = true;
+            this.solve();
+            this.usedPieces[name] = false;
+            for (const [pr, pc] of placed) this.solution[pr][pc] = 0;
+            if (this.timedOut || this.count >= this.cap) return;
+        }
+    }
+}
+
+const SOLUTION_COUNT_CAP = 100;
+const SOLUTION_COUNT_TIME_BUDGET_MS = 1000;
+
+function countSolutionsFromState(month, day, weekday, fixedState) {
+    const counter = new SolutionCounter(
+        BOARD, month, day, weekday, fixedState,
+        SOLUTION_COUNT_CAP, SOLUTION_COUNT_TIME_BUDGET_MS
+    );
+    counter.solve();
+    return {
+        count: counter.count,
+        capped: counter.count >= SOLUTION_COUNT_CAP,
+        timedOut: counter.timedOut
+    };
+}
+
+// Recomputing is deferred (rAF + setTimeout) so it never blocks the redraw
+// or drag flow that triggered it, and a token guards against an older,
+// slower count overwriting a newer board state's result if two updates
+// get scheduled back-to-back.
+let solutionCountToken = 0;
+
+// Whether the player has chosen to hide the solution count (a spoiler for
+// the puzzle's difficulty). We still keep computing it in the background so
+// it's ready instantly the moment they reveal it again.
+let solutionCountHidden = true; // collapsed by default
+let lastSolutionResult = null;
+
+// Shows/hides the placeholder vs. the actual label+value based purely on
+// the current hidden preference — 0 solutions is treated the same as any
+// other count, so the player can only find out by choosing to reveal it.
+// The red/orange border styling is likewise only applied while expanded —
+// a collapsed div should look neutral, not give away a dead end via color.
+function updateSolutionInfoDisplay() {
+    const wrap = document.getElementById("solutionInfo");
+    const placeholder = document.getElementById("solutionPlaceholder");
+    const label = wrap ? wrap.querySelector(".si-label") : null;
+    const valEl = document.getElementById("solutionCountVal");
+    if (!wrap || !placeholder || !label || !valEl) return;
+
+    const expanded = !solutionCountHidden;
+
+    placeholder.style.display = expanded ? "none" : "inline";
+    label.style.display = expanded ? "inline" : "none";
+    valEl.style.display = expanded ? "inline" : "none";
+    wrap.title = solutionCountHidden ? "Click to reveal the solution count" : "Click to hide the solution count";
+
+    wrap.classList.remove("zero", "capped");
+    if (expanded && lastSolutionResult) {
+        const { count, capped, timedOut } = lastSolutionResult;
+        if (count === 0) wrap.classList.add("zero");
+        else if (capped || timedOut) wrap.classList.add("capped");
+    }
+}
+
+function toggleSolutionCountHidden() {
+    solutionCountHidden = !solutionCountHidden;
+    updateSolutionInfoDisplay();
+}
+
+function scheduleSolutionCount() {
+    // While a piece is picked up, the board is mid-move and not a state worth
+    // spending a search on — skip entirely and leave the last known count
+    // showing (dimmed via the "paused" class) until the piece is dropped.
+    if (isHoldingPiece) return;
+
+    const token = ++solutionCountToken;
+    const wrap = document.getElementById("solutionInfo");
+    const valEl = document.getElementById("solutionCountVal");
+    if (wrap && valEl) {
+        wrap.classList.remove("zero", "capped");
+        valEl.textContent = "counting…";
+    }
+    requestAnimationFrame(() => setTimeout(() => {
+        if (token !== solutionCountToken) return; // superseded by a newer board state
+        const m = selMonth.value, d = selDay.value, w = selWeekday.value;
+        const fixedState = manualState.map(row => row.slice());
+        const result = countSolutionsFromState(m, d, w, fixedState);
+        if (token !== solutionCountToken) return;
+        renderSolutionCount(result);
+    }, 20));
+}
+
+function renderSolutionCount(result) {
+    lastSolutionResult = result;
+    const valEl = document.getElementById("solutionCountVal");
+    if (!valEl) return;
+
+    const { count, capped, timedOut } = result;
+    if (count === 0) {
+        valEl.textContent = "0 — no solution from here";
+    } else if (capped) {
+        valEl.textContent = `${SOLUTION_COUNT_CAP}+`;
+    } else if (timedOut) {
+        valEl.textContent = `${count}+ (still counting…)`;
+    } else {
+        valEl.textContent = `${count}`;
+    }
+    updateSolutionInfoDisplay();
+}
+
+(() => {
+    const wrap = document.getElementById("solutionInfo");
+    if (!wrap) return;
+    wrap.addEventListener("click", toggleSolutionCountHidden);
+    wrap.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSolutionCountHidden(); }
+    });
+    updateSolutionInfoDisplay();
+})();
 
 const COLORS = {
     "-2": "#000000", "-1": "none", "0": "#ffffff",
@@ -792,7 +1026,7 @@ function initManualState(hardReset = false) {
     isAutoSolved = false;
 }
 
-function redrawBoard() { drawBoard(manualState); }
+function redrawBoard() { drawBoard(manualState); scheduleSolutionCount(); }
 
 function removePieceFromBoard(pieceIdx) {
     const ps = pieceStates[pieceIdx];
@@ -821,6 +1055,7 @@ function onBoardPieceDragStart(e) {
     if (colorIdx <= 0) return;
     const pieceIdx = colorIdx - 1;
     const ps = pieceStates[pieceIdx];
+    setHoldingPiece(true);
 
     // Compute the piece's current world position (matches where it's drawn
     // on the board right now) so it doesn't jump when it becomes "free".
@@ -902,7 +1137,10 @@ function buildPieceGroup(pieceIdx, centerX, centerY) {
     label.textContent = PIECE_NAMES[pieceIdx];
     g.appendChild(label);
 
-    const btnY = b.minY - 11;
+    const ROT_BTN_R = 14;      // was 9 — bigger, easier to tap on mobile
+    const ROT_BTN_GAP = 22;    // horizontal spread between the two buttons
+    const ROT_BTN_RISE = 26;   // how far above the centroid the buttons sit
+    const btnY = b.cy - ROT_BTN_RISE;
     const mkRotBtn = (dx, symbol, dir) => {
         const btn = makeSVG("g");
         btn.style.cursor = "pointer";
@@ -910,7 +1148,7 @@ function buildPieceGroup(pieceIdx, centerX, centerY) {
         bg.setAttribute("class", "rot-btn-bg");
         bg.setAttribute("cx", b.cx + dx);
         bg.setAttribute("cy", btnY);
-        bg.setAttribute("r", "9");
+        bg.setAttribute("r", String(ROT_BTN_R));
         const txt = makeSVG("text");
         txt.setAttribute("class", "rot-btn-txt");
         txt.setAttribute("x", b.cx + dx);
@@ -918,7 +1156,7 @@ function buildPieceGroup(pieceIdx, centerX, centerY) {
         txt.setAttribute("text-anchor", "middle");
         txt.setAttribute("dominant-baseline", "middle");
         txt.setAttribute("dy", "0.05em");
-        txt.setAttribute("font-size", "11");
+        txt.setAttribute("font-size", "16");
         txt.style.pointerEvents = "none";
         txt.textContent = symbol;
         btn.appendChild(bg);
@@ -928,15 +1166,17 @@ function buildPieceGroup(pieceIdx, centerX, centerY) {
         btn.addEventListener("click", e => { e.stopPropagation(); rotatePiece(pieceIdx, dir); });
         return btn;
     };
-    g.appendChild(mkRotBtn(-16, "↺", -1));
-    g.appendChild(mkRotBtn(16, "↻", 1));
+    g.appendChild(mkRotBtn(-ROT_BTN_GAP, "↺", -1));
+    g.appendChild(mkRotBtn(ROT_BTN_GAP, "↻", 1));
 
     g.title = `${PIECE_NAMES[pieceIdx]} — drag anywhere, scroll or tap ↻↺ to rotate`;
     g.addEventListener("pointerdown", e => onPieceDragStart(e, pieceIdx), {passive: false});
     g.addEventListener("touchstart", blockNativeTouchScroll, {passive: false});
     g.addEventListener("wheel", e => {
         e.preventDefault();
-        rotatePiece(pieceIdx, e.deltaY > 0 ? 1 : -1);
+        const [mx, my] = getClientXY(e);
+        const pivot = screenToLocal(mx, my);
+        rotatePiece(pieceIdx, e.deltaY > 0 ? 1 : -1, pivot);
     }, {passive: false});
 
     return g;
@@ -960,11 +1200,45 @@ function renderFreePieces() {
     });
 }
 
-function rotatePiece(pieceIdx, dir) {
+// Measures the exact angle (radians) between two orientations of a piece.
+// Cell index i means the same physical cell across every rotation entry (the
+// rotation generator applies the same transform to every cell in lockstep),
+// and boardToPixel(0,0) is always the pixel origin, so comparing any one
+// non-origin cell's angle before/after tells us the true rotation delta —
+// even for pieces whose unique-rotation list skips some 60° steps due to
+// symmetry, where the jump between consecutive rotIdx values isn't always
+// a plain 60°.
+function pieceRotationAngle(pieceIdx, oldRotIdx, newRotIdx) {
+    const cellsOld = getPieceCells(pieceIdx, oldRotIdx);
+    const cellsNew = getPieceCells(pieceIdx, newRotIdx);
+    for (let i = 1; i < cellsOld.length; i++) {
+        const [xo, yo] = boardToPixel(cellsOld[i][0], cellsOld[i][1]);
+        if (Math.hypot(xo, yo) < 1e-6) continue; // degenerate — try the next cell
+        const [xn, yn] = boardToPixel(cellsNew[i][0], cellsNew[i][1]);
+        return Math.atan2(yn, xn) - Math.atan2(yo, xo);
+    }
+    return 0;
+}
+
+function rotatePiece(pieceIdx, dir, pivot = null) {
     const ps = pieceStates[pieceIdx];
     const name = PIECE_NAMES[pieceIdx];
     const nRots = PIECE_ROTATIONS[name].length;
-    ps.rotIdx = ((ps.rotIdx + dir) % nRots + nRots) % nRots;
+    const oldRotIdx = ps.rotIdx;
+    const newRotIdx = ((oldRotIdx + dir) % nRots + nRots) % nRots;
+
+    // Rotate the piece's world position around the given pivot (e.g. the
+    // mouse) instead of leaving its centroid fixed, so the point under the
+    // cursor stays put — same idea as zooming a map around the cursor.
+    if (pivot && ps.x !== undefined && ps.y !== undefined) {
+        const theta = pieceRotationAngle(pieceIdx, oldRotIdx, newRotIdx);
+        const cosT = Math.cos(theta), sinT = Math.sin(theta);
+        const vx = ps.x - pivot.x, vy = ps.y - pivot.y;
+        ps.x = pivot.x + (vx * cosT - vy * sinT);
+        ps.y = pivot.y + (vx * sinT + vy * cosT);
+    }
+
+    ps.rotIdx = newRotIdx;
     renderFreePieces();
 }
 
@@ -977,6 +1251,19 @@ function rotatePiece(pieceIdx, dir) {
 let dragPieceIdx = -1;
 let dragStart = null;
 let activePointerId = null;
+
+// True for the entire span the user has a piece picked up — from the
+// initial pointerdown until it's dropped (placed or left loose). The
+// solution-count search is paused for that whole span (see
+// scheduleSolutionCount) rather than just while the pointer is moving, since
+// even the moment of pickup already changes the board (a piece leaves it).
+let isHoldingPiece = false;
+
+function setHoldingPiece(holding) {
+    isHoldingPiece = holding;
+    const wrap = document.getElementById("solutionInfo");
+    if (wrap) wrap.classList.toggle("paused", holding);
+}
 
 // Pointer Events' preventDefault() does NOT cancel native touch scrolling —
 // only a real touchstart/touchmove event's preventDefault() (or touch-action
@@ -1006,6 +1293,7 @@ function onPieceDragStart(e, pieceIdx) {
     e.preventDefault();
     e.stopPropagation(); // never let a piece touch fall through to board pan/zoom
     if (dragPieceIdx >= 0) return; // a drag is already in progress on another finger
+    setHoldingPiece(true);
     const [cx, cy] = getClientXY(e);
     beginDrag(pieceIdx, cx, cy, e.pointerId, e.target);
 }
@@ -1054,6 +1342,7 @@ function onPieceDragEnd(e) {
     document.removeEventListener("pointercancel", onPieceDragEnd);
     activePointerId = null;
     document.getElementById("board").setAttribute("class", "");
+    setHoldingPiece(false); // the hold is over — resume solution counting
 
     if (dragPieceIdx < 0) return;
     const pieceIdx = dragPieceIdx;
@@ -1073,8 +1362,12 @@ function onPieceDragEnd(e) {
             }
         }
     } else {
-        // Left as a loose piece wherever it was dropped in the box.
+        // Left as a loose piece wherever it was dropped in the box. If it
+        // came from the board, picking it up already changed manualState
+        // (see onBoardPieceDragStart) and redrawBoard() isn't called on this
+        // path, so the paused count needs an explicit nudge to catch up.
         renderFreePieces();
+        scheduleSolutionCount();
     }
     dragPieceIdx = -1;
     dragStart = null;
