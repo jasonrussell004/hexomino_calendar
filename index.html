@@ -117,6 +117,26 @@
     }
     select:hover, select:focus { border-color: var(--border-hi); }
 
+    input[type="date"] {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: var(--ui);
+      padding: 8px 14px;
+      cursor: pointer;
+      outline: none;
+      min-width: 140px;
+      transition: border-color 0.15s;
+      color-scheme: dark;
+    }
+    input[type="date"]:hover, input[type="date"]:focus { border-color: var(--border-hi); }
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(0.7);
+      cursor: pointer;
+    }
+
     .btn {
       display: inline-flex;
       align-items: center;
@@ -367,6 +387,10 @@
     <div class="control-section-title">Board Setup</div>
     <div class="control-section-row">
       <div class="cg">
+        <label for="dateInput">Pick a date</label>
+        <input type="date" id="dateInput">
+      </div>
+      <div class="cg">
         <label for="selMonth">Month</label>
         <select id="selMonth">
           <option>Jan</option><option>Feb</option><option>Mar</option>
@@ -386,23 +410,6 @@
           <option>Wed</option><option>Thu</option><option>Fri</option><option>Sat</option>
         </select>
       </div>
-      <div class="cg">
-        <label>Scramble</label>
-        <div class="scramble-group" id="scrambleGroup">
-          <button type="button" class="scramble-opt" id="scrambleEasy" data-n="9">
-            <span class="so-title">Easy</span>
-            <span class="so-sub">4 to place</span>
-          </button>
-          <button type="button" class="scramble-opt" id="scrambleMedium" data-n="6">
-            <span class="so-title">Medium</span>
-            <span class="so-sub">7 to place</span>
-          </button>
-          <button type="button" class="scramble-opt" id="scrambleHard" data-n="3">
-            <span class="so-title">Hard</span>
-            <span class="so-sub">10 to place</span>
-          </button>
-        </div>
-      </div>
       <div class="cg" style="flex-direction:row;gap:7px;align-items:flex-end;">
         <button class="btn" id="todayBtn">
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
@@ -420,6 +427,23 @@
   <div class="control-section">
     <div class="control-section-title">Solving Utilities</div>
     <div class="control-section-row">
+      <div class="cg">
+        <label>Scramble</label>
+        <div class="scramble-group" id="scrambleGroup">
+          <button type="button" class="scramble-opt" id="scrambleEasy" data-n="9">
+            <span class="so-title">Easy</span>
+            <span class="so-sub">4 to place</span>
+          </button>
+          <button type="button" class="scramble-opt" id="scrambleMedium" data-n="6">
+            <span class="so-title">Medium</span>
+            <span class="so-sub">7 to place</span>
+          </button>
+          <button type="button" class="scramble-opt" id="scrambleHard" data-n="3">
+            <span class="so-title">Hard</span>
+            <span class="so-sub">10 to place</span>
+          </button>
+        </div>
+      </div>
       <div class="cg" style="flex-direction:row;gap:7px;align-items:flex-end;">
         <button class="btn primary" id="solveButton">
           <span class="spinner" id="spinner"></span>
@@ -1671,6 +1695,7 @@ function getHoveredBoardCell(pieceIdx) {
 const selMonth   = document.getElementById("selMonth");
 const selDay     = document.getElementById("selDay");
 const selWeekday = document.getElementById("selWeekday");
+const dateInput  = document.getElementById("dateInput");
 const outputEl   = document.getElementById("output");
 const solveBtn   = document.getElementById("solveButton");
 const spinner2   = document.getElementById("spinner");
@@ -1695,8 +1720,36 @@ function applyToday() {
     selMonth.value   = MONTHS[n.getMonth()];
     selDay.value     = String(n.getDate());
     selWeekday.value = WEEKDAYS[n.getDay()];
+    dateInput.value  = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
 }
 applyToday();
+
+// <input type="date"> always hands back "YYYY-MM-DD". Parse it into
+// year/month/day parts and build the Date with the local-time constructor
+// (not `new Date(string)`, which parses as UTC midnight and can land on
+// the wrong day once converted to local time) — then pull month/day/weekday
+// out of that for the three dropdowns, same as applyToday() does for "now".
+function applyDateFromInput(value) {
+    if (!value) return;
+    const [y, mo, da] = value.split("-").map(Number);
+    if (!y || !mo || !da) return;
+    const n = new Date(y, mo - 1, da);
+    selMonth.value   = MONTHS[n.getMonth()];
+    selDay.value     = String(n.getDate());
+    selWeekday.value = WEEKDAYS[n.getDay()];
+}
+
+// Keeps the date input's month/day roughly in step whenever the dropdowns
+// change some other way (typing a weekday that doesn't match the real
+// calendar is a deliberate, independent puzzle knob, so this only follows
+// month/day — it doesn't try to force a "correct" weekday back in).
+function syncDateInputFromDropdowns() {
+    const monthIdx = MONTHS.indexOf(selMonth.value);
+    const day = parseInt(selDay.value, 10);
+    if (monthIdx < 0 || !day) return;
+    const year = dateInput.value ? dateInput.value.slice(0, 4) : String(new Date().getFullYear());
+    dateInput.value = `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
 
 function setStatus(msg, cls = "") { outputEl.textContent = msg; outputEl.className = cls; }
 
@@ -1708,6 +1761,7 @@ function drawInitial(hardReset = false) {
     initManualState(hardReset);
     redrawBoard();
     renderFreePieces();
+    syncDateInputFromDropdowns();
     setStatus(`${selWeekday.value} · ${selMonth.value} ${selDay.value} — drag pieces onto the board`);
 }
 
@@ -1716,6 +1770,7 @@ drawInitial();
 selMonth.addEventListener("change",   () => drawInitial());
 selDay.addEventListener("change",     () => drawInitial());
 selWeekday.addEventListener("change", () => drawInitial());
+dateInput.addEventListener("change",  () => { applyDateFromInput(dateInput.value); drawInitial(); });
 document.getElementById("todayBtn").addEventListener("click", () => { applyToday(); drawInitial(); });
 document.getElementById("resetBtn").addEventListener("click", () => { legendEl.innerHTML = ""; drawInitial(true); });
 
