@@ -60,13 +60,35 @@
       border-radius: var(--radius);
       padding: 14px 18px;
       display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 16px;
+      width: 100%;
+      max-width: 740px;
+    }
+
+    .control-section-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--accent-hi);
+      margin-bottom: 8px;
+    }
+
+    .control-section-row {
+      display: flex;
       flex-wrap: wrap;
       gap: 10px 18px;
       align-items: flex-end;
       justify-content: center;
-      margin-bottom: 16px;
+    }
+
+    .control-divider {
+      border: none;
+      border-top: 1px solid var(--border);
       width: 100%;
-      max-width: 740px;
+      margin: 0;
     }
 
     .cg { display: flex; flex-direction: column; gap: 5px; }
@@ -341,61 +363,76 @@
 </header>
 
 <div class="controls">
-  <div class="cg">
-    <label for="selMonth">Month</label>
-    <select id="selMonth">
-      <option>Jan</option><option>Feb</option><option>Mar</option>
-      <option>Apr</option><option>May</option><option>Jun</option>
-      <option>Jul</option><option>Aug</option><option>Sep</option>
-      <option>Oct</option><option>Nov</option><option>Dec</option>
-    </select>
-  </div>
-  <div class="cg">
-    <label for="selDay">Day</label>
-    <select id="selDay"></select>
-  </div>
-  <div class="cg">
-    <label for="selWeekday">Weekday</label>
-    <select id="selWeekday">
-      <option>Sun</option><option>Mon</option><option>Tue</option>
-      <option>Wed</option><option>Thu</option><option>Fri</option><option>Sat</option>
-    </select>
-  </div>
-  <div class="cg">
-    <label>Scramble</label>
-    <div class="scramble-group" id="scrambleGroup">
-      <button type="button" class="scramble-opt" id="scrambleEasy" data-n="9">
-        <span class="so-title">Easy</span>
-        <span class="so-sub">4 to place</span>
-      </button>
-      <button type="button" class="scramble-opt" id="scrambleMedium" data-n="6">
-        <span class="so-title">Medium</span>
-        <span class="so-sub">7 to place</span>
-      </button>
-      <button type="button" class="scramble-opt" id="scrambleHard" data-n="3">
-        <span class="so-title">Hard</span>
-        <span class="so-sub">10 to place</span>
-      </button>
+  <div class="control-section">
+    <div class="control-section-title">Board Setup</div>
+    <div class="control-section-row">
+      <div class="cg">
+        <label for="selMonth">Month</label>
+        <select id="selMonth">
+          <option>Jan</option><option>Feb</option><option>Mar</option>
+          <option>Apr</option><option>May</option><option>Jun</option>
+          <option>Jul</option><option>Aug</option><option>Sep</option>
+          <option>Oct</option><option>Nov</option><option>Dec</option>
+        </select>
+      </div>
+      <div class="cg">
+        <label for="selDay">Day</label>
+        <select id="selDay"></select>
+      </div>
+      <div class="cg">
+        <label for="selWeekday">Weekday</label>
+        <select id="selWeekday">
+          <option>Sun</option><option>Mon</option><option>Tue</option>
+          <option>Wed</option><option>Thu</option><option>Fri</option><option>Sat</option>
+        </select>
+      </div>
+      <div class="cg">
+        <label>Scramble</label>
+        <div class="scramble-group" id="scrambleGroup">
+          <button type="button" class="scramble-opt" id="scrambleEasy" data-n="9">
+            <span class="so-title">Easy</span>
+            <span class="so-sub">4 to place</span>
+          </button>
+          <button type="button" class="scramble-opt" id="scrambleMedium" data-n="6">
+            <span class="so-title">Medium</span>
+            <span class="so-sub">7 to place</span>
+          </button>
+          <button type="button" class="scramble-opt" id="scrambleHard" data-n="3">
+            <span class="so-title">Hard</span>
+            <span class="so-sub">10 to place</span>
+          </button>
+        </div>
+      </div>
+      <div class="cg" style="flex-direction:row;gap:7px;align-items:flex-end;">
+        <button class="btn" id="todayBtn">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+          Today
+        </button>
+        <button class="btn" id="resetBtn">
+          <span class="btn-symbol">⟲</span>Reset
+        </button>
+      </div>
     </div>
   </div>
-  <div class="cg" style="flex-direction:row;gap:7px;align-items:flex-end;">
-    <button class="btn" id="todayBtn">
-      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
-      Today
-    </button>
-    <button class="btn primary" id="solveButton">
-      <span class="spinner" id="spinner"></span>
-      <svg id="solveIcon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-      Solve
-    </button>
-    <button class="btn" id="hintButton">
-      <span class="spinner" id="hintSpinner"></span>
-      <svg id="hintIcon" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.05V17h6v-.25c0-.85.4-1.55 1-2.05A7 7 0 0 0 12 2z"/></svg>
-      Hint
-    </button>
-    <button class="btn" id="resetBtn">
-      <span class="btn-symbol">⟲</span>Reset
-    </button>
+
+  <hr class="control-divider">
+
+  <div class="control-section">
+    <div class="control-section-title">Solving Utilities</div>
+    <div class="control-section-row">
+      <div class="cg" style="flex-direction:row;gap:7px;align-items:flex-end;">
+        <button class="btn primary" id="solveButton">
+          <span class="spinner" id="spinner"></span>
+          <svg id="solveIcon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Solve
+        </button>
+        <button class="btn" id="hintButton">
+          <span class="spinner" id="hintSpinner"></span>
+          <svg id="hintIcon" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2.05V17h6v-.25c0-.85.4-1.55 1-2.05A7 7 0 0 0 12 2z"/></svg>
+          Hint
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1157,6 +1194,7 @@ function buildPieceGroup(pieceIdx, centerX, centerY) {
     const g = makeSVG("g");
     g.setAttribute("class", pieceIdx === hintedPieceIdx ? "piece-group hint-target" : "piece-group");
     g.setAttribute("transform", `translate(${centerX - b.cx},${centerY - b.cy})`);
+    g.dataset.pieceIdx = String(pieceIdx);
 
     b.pts.forEach(([x, y]) => {
         const poly = makeSVG("polygon");
@@ -1703,6 +1741,89 @@ function deriveRotAndAnchor(pieceIdx, cells) {
     return null;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   Solve animation — plays each newly-placed piece as a quick
+   spin-then-slide into its board position, one at a time,
+   instead of just snapping the whole solution in at once.
+═══════════════════════════════════════════════════════════ */
+const SOLVE_ANIM_SPIN_MS = 260; // quick spin in the tray to reveal the rotation
+const SOLVE_ANIM_MOVE_MS = 340; // slide from the tray into its board slot
+const SOLVE_ANIM_GAP_MS  = 90;  // brief pause before the next piece starts
+
+function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+// Where a free piece's (x,y) would need to be for it to render exactly
+// where it'd land once placed on the board at this rotation/anchor — same
+// math used when picking a placed piece back up (onBoardPieceDragStart),
+// just run in reverse.
+function boardAnchorToFreeXY(pieceIdx, rotIdx, anchorRow, anchorCol) {
+    const b = pieceLocalBounds(pieceIdx, rotIdx);
+    const [rawAnchorX, rawAnchorY] = boardToPixel(anchorRow, anchorCol);
+    const anchorWorldX = rawAnchorX + BOARD_ORIGIN.x, anchorWorldY = rawAnchorY + BOARD_ORIGIN.y;
+    return { x: anchorWorldX - b.pts[0][0] + b.cx, y: anchorWorldY - b.pts[0][1] + b.cy };
+}
+
+// Spins the piece in place, in the tray, around its own current visual
+// center — purely cosmetic; the actual rotIdx swap happens after this
+// resolves, once the piece is back at a clean 0°/360° angle.
+function spinPieceInTray(pieceIdx, durationMs) {
+    return new Promise(resolve => {
+        const ps = pieceStates[pieceIdx];
+        const b = pieceLocalBounds(pieceIdx, ps.rotIdx);
+        const g = document.querySelector(`#freeLayer g.piece-group[data-piece-idx="${pieceIdx}"]`);
+        if (!g) { resolve(); return; }
+        const baseX = ps.x - b.cx, baseY = ps.y - b.cy;
+        const start = performance.now();
+        (function step(now) {
+            const t = Math.min(1, (now - start) / durationMs);
+            const angle = easeInOutCubic(t) * 360;
+            g.setAttribute("transform", `translate(${baseX},${baseY}) rotate(${angle} ${b.cx} ${b.cy})`);
+            if (t < 1) requestAnimationFrame(step); else resolve();
+        })(start);
+    });
+}
+
+// Slides a free piece from its current tray position to a target world
+// position, re-rendering the tray every frame.
+function movePieceInTray(pieceIdx, targetX, targetY, durationMs) {
+    return new Promise(resolve => {
+        const ps = pieceStates[pieceIdx];
+        const startX = ps.x, startY = ps.y;
+        const start = performance.now();
+        (function step(now) {
+            const t = Math.min(1, (now - start) / durationMs);
+            const eased = easeInOutCubic(t);
+            ps.x = startX + (targetX - startX) * eased;
+            ps.y = startY + (targetY - startY) * eased;
+            renderFreePieces();
+            if (t < 1) requestAnimationFrame(step); else resolve();
+        })(start);
+    });
+}
+
+function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// Plays the full spin → slide → snap-into-place sequence for one piece.
+async function animatePieceIntoPlace(pieceIdx, targetRotIdx, anchorRow, anchorCol) {
+    hintedPieceIdx = pieceIdx; // reuse the hint glow as a "now placing this one" spotlight
+    renderFreePieces();
+
+    await spinPieceInTray(pieceIdx, SOLVE_ANIM_SPIN_MS);
+    pieceStates[pieceIdx].rotIdx = targetRotIdx;
+    renderFreePieces();
+
+    const target = boardAnchorToFreeXY(pieceIdx, targetRotIdx, anchorRow, anchorCol);
+    await movePieceInTray(pieceIdx, target.x, target.y, SOLVE_ANIM_MOVE_MS);
+
+    tryPlacePiece(pieceIdx, getPieceCells(pieceIdx, targetRotIdx), anchorRow, anchorCol);
+    redrawBoard(); // also clears hintedPieceIdx/hint highlight, since the board just changed for real
+    renderFreePieces();
+
+    await wait(SOLVE_ANIM_GAP_MS);
+}
+
 function syncPieceStatesFromSolution(solution) {
     const cellsByColor = {};
     for (let r = 0; r < solution.length; r++) {
@@ -1724,46 +1845,76 @@ function syncPieceStatesFromSolution(solution) {
     });
 }
 
-solveBtn.addEventListener("click", () => {
+solveBtn.addEventListener("click", async () => {
     const m = selMonth.value, d = selDay.value, w = selWeekday.value;
     const hasFixedPieces = pieceStates.some(ps => ps.placed);
-    solveBtn.disabled = true;
-    hintBtn.disabled = true;
-    scrambleOptBtns.forEach(b => b.disabled = true);
+
+    const setControlsDisabled = disabled => {
+        solveBtn.disabled = disabled;
+        hintBtn.disabled = disabled;
+        scrambleOptBtns.forEach(b => b.disabled = disabled);
+        document.getElementById("todayBtn").disabled = disabled;
+        document.getElementById("resetBtn").disabled = disabled;
+        selMonth.disabled = disabled;
+        selDay.disabled = disabled;
+        selWeekday.disabled = disabled;
+    };
+
+    setControlsDisabled(true);
     spinner2.style.display = "block";
     solveIcon.style.display = "none";
     setStatus(`Solving for ${w} · ${m} ${d}...`, "loading");
     legendEl.innerHTML = "";
 
-    requestAnimationFrame(() => setTimeout(() => {
-        // Keep whatever pieces are already on the board fixed in place, and
-        // only solve around them.
-        const fixedState = manualState.map(row => row.slice());
-        const result = solveCalendar(m, d, w, fixedState);
-        solveBtn.disabled = false;
-        hintBtn.disabled = false;
-        scrambleOptBtns.forEach(b => b.disabled = false);
-        spinner2.style.display = "none";
-        solveIcon.style.display = "block";
+    await new Promise(r => requestAnimationFrame(() => setTimeout(r, 30)));
 
-        if (!result.solved) {
-            setStatus(
-                hasFixedPieces
-                    ? `No solution found for ${w} · ${m} ${d} with the current pieces kept in place`
-                    : `No solution found for ${w} · ${m} ${d}`,
-                "error"
-            );
-            return;
+    const fixedState = manualState.map(row => row.slice());
+    const result = solveCalendar(m, d, w, fixedState);
+    spinner2.style.display = "none";
+    solveIcon.style.display = "block";
+
+    if (!result.solved) {
+        setControlsDisabled(false);
+        setStatus(
+            hasFixedPieces
+                ? `No solution found for ${w} · ${m} ${d} with the current pieces kept in place`
+                : `No solution found for ${w} · ${m} ${d}`,
+            "error"
+        );
+        return;
+    }
+
+    // Work out every piece that still needs to be placed, and where —
+    // then play them in one at a time instead of snapping the board
+    // straight to the final solution.
+    const cellsByColor = {};
+    for (let r = 0; r < result.solution.length; r++) {
+        for (let c = 0; c < result.solution[r].length; c++) {
+            const v = result.solution[r][c];
+            if (v > 0) (cellsByColor[v] = cellsByColor[v] || []).push([r, c]);
         }
+    }
 
-        isAutoSolved = true;
-        manualState = result.solution.map(row => row.slice());
-        syncPieceStatesFromSolution(manualState);
-        document.getElementById("freeLayer").innerHTML = "";
-        drawBoard(manualState);
-        setStatus(`✓ Solved! — ${w} · ${m} ${d}`, "solved");
-        buildLegend();
-    }, 30));
+    const steps = [];
+    for (let i = 0; i < pieceStates.length; i++) {
+        if (pieceStates[i].placed) continue;
+        const cells = cellsByColor[i + 1];
+        if (!cells) continue;
+        const found = deriveRotAndAnchor(i, cells);
+        if (found) steps.push({ pieceIdx: i, rotIdx: found.rotIdx, anchorRow: found.anchorRow, anchorCol: found.anchorCol });
+    }
+
+    isAutoSolved = true;
+    setHoldingPiece(true); // suppress the (up to 1s) solution recount after every intermediate piece
+    for (const step of steps) {
+        await animatePieceIntoPlace(step.pieceIdx, step.rotIdx, step.anchorRow, step.anchorCol);
+    }
+    setHoldingPiece(false);
+    scheduleSolutionCount();
+
+    setControlsDisabled(false);
+    setStatus(`✓ Solved! — ${w} · ${m} ${d}`, "solved");
+    buildLegend();
 });
 
 hintBtn.addEventListener("click", () => {
