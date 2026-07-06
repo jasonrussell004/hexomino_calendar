@@ -1056,42 +1056,33 @@ function computeLayout() {
         }
     }
     const boardW = maxX - minX, boardH = maxY - minY;
-    const trayCols = 4;
-    const slot = 150;
-    const gap = 26;
-    const pad = 16;
-
-    // Split the pieces into two roughly-equal groups — one tray above the
-    // board, one below — instead of stacking everything in a single tray.
-    const aboveCount = Math.floor(PIECE_NAMES.length / 2);
-    const belowCount = PIECE_NAMES.length - aboveCount;
-    const aboveRows = Math.ceil(aboveCount / trayCols);
-    const belowRows = Math.ceil(belowCount / trayCols);
+    const trayCols = 5;
+    const slot = 125;
+    const trayRows = Math.ceil(PIECE_NAMES.length / trayCols);
     const trayW = trayCols * slot;
-    const aboveH = aboveRows * slot;
-    const belowH = belowRows * slot;
-
+    const trayH = trayRows * slot;
+    const gap = 22;
+    const pad = 16;
     const totalW = Math.max(boardW, trayW);
-    const totalH = aboveH + gap + boardH + gap + belowH;
+    const totalH = boardH + gap + trayH;
 
     // BOARD_ORIGIN maps raw boardToPixel(row,col) output into world space,
-    // shifted so the board is horizontally centered within totalW, with the
-    // "above" tray's height (plus a gap) pushing it down from world y = 0.
+    // shifted so the board is horizontally centered within totalW and
+    // top-aligned at world y = 0.
     const boardOrigin = {
         x: (totalW - boardW) / 2 - minX,
-        y: (aboveH + gap) - minY
+        y: -minY
     };
 
-    // Both trays are centered within totalW, one above the board, one below.
+    // The tray sits below the board, centered within totalW.
     const trayX0 = (totalW - trayW) / 2;
-    const trayAboveY0 = 0;
-    const trayBelowY0 = aboveH + gap + boardH + gap;
+    const trayY0 = boardH + gap;
 
     return {
         boardOrigin,
         boardMinX: (totalW - boardW) / 2, boardMaxX: (totalW - boardW) / 2 + boardW,
-        boardMinY: aboveH + gap, boardMaxY: aboveH + gap + boardH,
-        trayX0, trayAboveY0, trayBelowY0, trayCols, aboveCount, belowCount, slot,
+        boardMinY: 0, boardMaxY: boardH,
+        trayX0, trayY0, trayCols, trayRows, slot,
         viewX: -pad, viewY: -pad,
         viewW: totalW + pad * 2, viewH: totalH + pad * 2
     };
@@ -1099,10 +1090,6 @@ function computeLayout() {
 
 const LAYOUT = computeLayout();
 const BOARD_ORIGIN = LAYOUT.boardOrigin;
-
-// Which tray zone each piece starts in — first half above the board, the
-// rest below — so the tray reads as "spread equally" on both sides.
-const ABOVE_PIECE_IDX = new Set(PIECE_NAMES.map((_, i) => i).slice(0, LAYOUT.aboveCount));
 
 
 function initSVG() {
@@ -1567,20 +1554,17 @@ function drawHintHighlight(cells, colorIdx) {
 function renderFreePieces() {
     const layer = document.getElementById("freeLayer");
     layer.innerHTML = "";
-    let aboveSlot = 0, belowSlot = 0;
+    let slotIdx = 0;
     PIECE_NAMES.forEach((name, i) => {
         const ps = pieceStates[i];
-        const isAbove = ABOVE_PIECE_IDX.has(i);
-        if (ps.placed) { if (isAbove) aboveSlot++; else belowSlot++; return; }
+        if (ps.placed) { slotIdx++; return; }
         if (ps.x === undefined || ps.y === undefined) {
-            const slotIdx = isAbove ? aboveSlot : belowSlot;
             const col = slotIdx % LAYOUT.trayCols;
             const row = Math.floor(slotIdx / LAYOUT.trayCols);
-            const y0 = isAbove ? LAYOUT.trayAboveY0 : LAYOUT.trayBelowY0;
             ps.x = LAYOUT.trayX0 + col * LAYOUT.slot + LAYOUT.slot / 2;
-            ps.y = y0 + row * LAYOUT.slot + LAYOUT.slot / 2;
+            ps.y = LAYOUT.trayY0 + row * LAYOUT.slot + LAYOUT.slot / 2;
         }
-        if (isAbove) aboveSlot++; else belowSlot++;
+        slotIdx++;
         layer.appendChild(buildPieceGroup(i, ps.x, ps.y));
     });
 }
